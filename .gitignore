@@ -3,8 +3,5 @@ terraform/terraform.tfvars
 terraform/*.tfstate*
 terraform/.terraform/
 
-# OpenClaw config with real tokens
-openclaw-config.json
-
 # OS files
 .DS_Store

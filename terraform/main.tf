@@ -16,7 +16,7 @@ variable "hcloud_token" {
 variable "server_name" {
   description = "Name of the server"
   type        = string
-  default     = "openclaw"
+  default     = "agent-vps"
 }
 
 variable "server_type" {
@@ -47,7 +47,7 @@ resource "hcloud_ssh_key" "default" {
 }
 
 # Server resource
-resource "hcloud_server" "openclaw" {
+resource "hcloud_server" "agent_vps" {
   name        = var.server_name
   server_type = var.server_type
   image       = "ubuntu-24.04"
@@ -57,7 +57,7 @@ resource "hcloud_server" "openclaw" {
   labels = {
     environment = "production"
     managed_by  = "terraform"
-    purpose     = "openclaw"
+    purpose     = "coding-agents"
   }
 
   # User data to run initial setup
@@ -67,7 +67,7 @@ resource "hcloud_server" "openclaw" {
 }
 
 # Firewall for security
-resource "hcloud_firewall" "openclaw" {
+resource "hcloud_firewall" "agent_vps" {
   name = "${var.server_name}-firewall"
 
   # SSH
@@ -93,36 +93,28 @@ resource "hcloud_firewall" "openclaw" {
     port       = "443"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
-
-  # OpenClaw default port
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "7860"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
 }
 
 # Attach firewall to server
-resource "hcloud_firewall_attachment" "openclaw" {
-  firewall_id = hcloud_firewall.openclaw.id
-  server_ids  = [hcloud_server.openclaw.id]
+resource "hcloud_firewall_attachment" "agent_vps" {
+  firewall_id = hcloud_firewall.agent_vps.id
+  server_ids  = [hcloud_server.agent_vps.id]
 }
 
 # Outputs
 output "server_ip" {
   description = "IPv4 address of the server"
-  value       = hcloud_server.openclaw.ipv4_address
+  value       = hcloud_server.agent_vps.ipv4_address
 }
 
 output "server_name" {
   description = "Name of the created server"
-  value       = hcloud_server.openclaw.name
+  value       = hcloud_server.agent_vps.name
 }
 
 output "ssh_command" {
   description = "Command to SSH into the server"
-  value       = "ssh claw@${hcloud_server.openclaw.ipv4_address}"
+  value       = "ssh ubuntu@${hcloud_server.agent_vps.ipv4_address}"
 }
 
 output "setup_next_steps" {
@@ -134,14 +126,10 @@ Server created! Next steps:
 1. Wait 2-3 minutes for cloud-init to complete
 
 2. SSH into the server:
-   ssh claw@${hcloud_server.openclaw.ipv4_address}
+   ssh ubuntu@${hcloud_server.agent_vps.ipv4_address}
 
 3. Run the VPS setup script:
-   curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh | sudo bash
-
-4. Install OpenClaw:
-   npm install -g openclaw
-   openclaw setup
+   sudo ./setup.sh --on-server
 
 To destroy (stops billing):
    terraform destroy

@@ -4,7 +4,7 @@
 hostname: ${server_name}
 
 users:
-  - name: claw
+  - name: ubuntu
     sudo: ALL=(ALL) NOPASSWD:ALL
     shell: /bin/bash
     ssh_authorized_keys: []
@@ -35,29 +35,27 @@ runcmd:
   - ufw allow 22/tcp
   - ufw allow 80/tcp
   - ufw allow 443/tcp
-  - ufw allow 7860/tcp
   - ufw --force enable
-  
+
   # Basic fail2ban config
   - systemctl enable fail2ban
   - systemctl start fail2ban
-  
+
   # Create welcome message
   - |
-    cat > /etc/update-motd.d/99-openclaw << 'MOTD'
+    cat > /etc/update-motd.d/99-agent-vps << 'MOTD'
     #!/bin/bash
     echo ""
     echo "========================================"
-    echo "  OpenClaw Server - Ready for setup"
+    echo "  Coding Agent VPS - Ready for setup"
     echo "========================================"
     echo ""
-    echo "Run basic setup:"
-    echo "  curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh | sudo bash"
-    echo ""
-    echo "Or with OpenClaw auto-install:"
-    echo "  curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh | sudo bash -s -- --install-openclaw"
+    echo "Run the setup script:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o setup.sh"
+    echo "  chmod +x setup.sh"
+    echo "  sudo ./setup.sh --on-server"
     echo ""
     MOTD
-  - chmod +x /etc/update-motd.d/99-openclaw
+  - chmod +x /etc/update-motd.d/99-agent-vps
 
-final_message: "Server initialization complete. Run 'ssh claw@<ip>' to connect."
+final_message: "Server initialization complete. Run 'ssh ubuntu@<ip>' to connect."

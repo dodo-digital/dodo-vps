@@ -6,7 +6,7 @@
 hcloud_token = "your-hetzner-api-token-here"
 
 # Server configuration
-server_name = "openclaw-prod"
+server_name = "agent-vps"
 server_type = "cpx21"  # cpx11 (4GB), cpx21 (8GB), cpx31 (16GB)
 location    = "ash"    # ash=Ashburn, nbg=Nuremberg, fsn=Falkenstein
 

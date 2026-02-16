@@ -1,356 +1,194 @@
-# OpenClaw VPS Setup Guide
+# dodo-vps
 
-A complete guide and automated script for setting up a secure VPS for running OpenClaw.
+One command to launch a coding-agent-ready VPS.
+
+Creates a hardened Hetzner server with Claude Code, Codex, Gemini CLI, and OpenCode pre-installed.
+
+## Before You Start
+
+You need two things. The wizard walks you through both.
+
+### 1. Hetzner Cloud Account (required)
+
+[Hetzner](https://console.hetzner.cloud/) hosts your server. Servers start at ~$6/month and you can delete anytime.
+
+1. Create an account at [console.hetzner.cloud](https://console.hetzner.cloud/)
+2. Create a project (or use the default one)
+3. Go to **Security > API Tokens > Generate API Token**
+4. Select **Read & Write** access and copy the token
+
+### 2. API Keys for Your Coding Agents (after setup)
+
+You don't need these during setup — the agents are installed either way. But you'll need at least one to start coding.
+
+| Agent | Where to get the key | Env variable |
+|-------|---------------------|--------------|
+| Claude Code | [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys) | `ANTHROPIC_API_KEY` |
+| Codex | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) | `OPENAI_API_KEY` |
+| Gemini CLI | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | `GEMINI_API_KEY` |
+| OpenCode | Uses any of the above | Same as above |
+
+### Optional
+
+- **Tailscale account** — if you want private VPN access to your server. Free at [tailscale.com](https://tailscale.com). The setup wizard will ask.
 
 ## Quick Start
 
-```bash
-# Run the automated setup (as root)
-curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh | sudo bash
+Run from your laptop:
 
-# Or with OpenClaw fully auto-installed:
-curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh | sudo bash -s -- --install-openclaw
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh)"
 ```
 
-Or manually:
+The wizard walks you through everything: server size, location, which agents to install. Takes about 10 minutes.
+
+### Already have a VPS?
+
+Run directly on an existing Ubuntu server:
 
 ```bash
-# Download and run
-wget https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh
+curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o setup.sh
 chmod +x setup.sh
-sudo ./setup.sh --install-openclaw
+sudo ./setup.sh --on-server
 ```
 
-## What This Script Does
+## What Gets Installed
 
-### 1. System Updates
-- Updates all packages
-- Installs essential tools (curl, git, vim, htop, tmux, build-essential)
+### Coding Agents (all optional, all default to yes)
 
-### 2. User Setup
-- Creates a non-root user (`claw` by default)
-- Adds user to sudo group
-- **Why:** Running services as root is a security risk
+| Agent | Command | Provider |
+|-------|---------|----------|
+| Claude Code | `claude` | Anthropic |
+| Codex | `codex` | OpenAI |
+| Gemini CLI | `gemini` | Google |
+| OpenCode | `opencode` | Open source |
 
-### 3. SSH Hardening
-- Disables root login
-- Enforces key-based authentication (passwords disabled)
-- Limits authentication attempts
-- Adds connection timeouts
-- **⚠️ Important:** Ensure you have SSH key access before running this!
+### Development Tools
 
-### 4. Firewall (UFW)
-- Blocks all incoming traffic by default
-- Allows: SSH (22), OpenClaw (7860), HTTP (80), HTTPS (443)
-- **Why:** Defense in depth — only expose necessary ports
+- **Node.js 22** with npm global prefix (no sudo needed for `npm install -g`)
+- **Homebrew** (Linuxbrew) for dev tool management
+- **Bun** runtime
+- **Docker** (optional)
 
-### 5. Intrusion Prevention (Fail2ban)
-- Bans IPs after 3 failed SSH attempts
-- Configurable ban time (default: 1 hour)
-- **Why:** Protects against brute force attacks
+### Security & Maintenance
 
-### 6. Swap (8GB)
-- Creates `/swapfile.img` with 8GB swap
-- Sets `vm.swappiness=10` (prefer RAM, swap as safety net)
-- **Why:** Coding agents can spike memory; swap prevents OOM kills
+- SSH hardening (root login disabled, key-only auth)
+- UFW firewall (SSH + HTTP/HTTPS only)
+- Fail2ban (bans after 3 failed SSH attempts, 24h ban)
+- Automatic security updates
+- Swap (sized to match RAM, up to 16 GB)
+- `/tmp` cleanup cron (daily at 4am)
 
-### 7. Package Managers & CLI Tools
-- **Homebrew** (Linuxbrew) — modern package manager, better for dev tools
-- **Docker** — containerization for services
-- **Node.js 22.x** — required for OpenClaw
-- **Bun** — fast JavaScript runtime (used by some OpenClaw components)
-- **Claude Code** — Anthropic's CLI for Claude
-- **Codex** — OpenAI's CLI agent
+## Server Costs (Hetzner)
 
-### 8. Auto-Updates
-- Enables unattended security updates
-- Keeps the system patched automatically
+| Size | Specs | Monthly Cost | Best For |
+|------|-------|-------------|----------|
+| Small | 2 GB / 2 CPU | ~$6/mo | Light usage, single agent |
+| Medium | 4 GB / 3 CPU | ~$11/mo | Recommended for most users |
+| Large | 8 GB / 4 CPU | ~$19/mo | Heavy usage, multiple agents |
+| Extra Large | 16 GB / 8 CPU | ~$34/mo | Power user, concurrent workloads |
 
-### 9. Temp Cleanup (Cron)
-- Installs `tmp-cleanup` to `~/.local/bin/`
-- Runs daily at 4am via crontab
-- Indexes CASS (coding agent session search) before cleanup
-- Removes files/dirs in `/tmp` older than 2 days
-- Never removes files with open file handles (`lsof` check)
-- Preserves tmux sockets, SSH agents, browser sockets, systemd dirs
-- **Why:** Coding agents (Claude, Codex, etc.) generate heavy temp data that can fill `/tmp` and hang processes
-- Manual usage: `tmp-cleanup --dry-run --verbose`
+## Post-Setup
 
-### 10. OpenClaw (with `--install-openclaw`)
-
-When the `--install-openclaw` flag is passed, the script also:
-- Installs OpenClaw as the service user (not root) to avoid dual-install issues
-- Generates a `SECURITY.md` with safe agent boundaries
-- Runs `openclaw onboard` for interactive setup (API keys, Telegram, 1Password, etc.)
-- Creates `/etc/openclaw-secrets` for systemd-managed secrets
-- Installs a 1Password CLI audit wrapper (logs all `op` invocations)
-- Creates a hardened systemd service with `EnvironmentFile` for secrets
-
-## Secrets Management
-
-Secrets are stored in `/etc/openclaw-secrets` (root:root, mode 600) and loaded by the
-systemd service via `EnvironmentFile`. This keeps secrets out of the user's environment
-and shell history.
+### Connect to your server
 
 ```bash
-# Edit secrets
-sudo vim /etc/openclaw-secrets
-
-# Restart to pick up changes
-sudo systemctl restart openclaw-gateway
+ssh -i ~/.ssh/dodo-vps_ed25519 ubuntu@<server-ip>
 ```
 
-The file format is one `KEY=VALUE` per line:
-
-```
-OP_SERVICE_ACCOUNT_TOKEN=ops_abc123...
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
-## Manual Setup (Step-by-Step)
-
-If you prefer to understand each step:
-
-### 1. Create a Non-Root User
+### Set your API keys
 
 ```bash
-# As root
-useradd -m -s /bin/bash claw
-usermod -aG sudo claw
-passwd claw
+# Add to ~/.bashrc so they persist across sessions
+echo 'export ANTHROPIC_API_KEY=sk-ant-...' >> ~/.bashrc
+echo 'export OPENAI_API_KEY=sk-...' >> ~/.bashrc
+echo 'export GEMINI_API_KEY=...' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-### 2. Harden SSH
+See [Before You Start](#2-api-keys-for-your-coding-agents-after-setup) for where to get each key.
+
+### Start coding
 
 ```bash
-# Backup config
-cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak
-
-# Edit config
-vim /etc/ssh/sshd_config
-
-# Add these lines:
-PermitRootLogin no
-PasswordAuthentication no
-PubkeyAuthentication yes
-MaxAuthTries 3
-
-# Restart SSH
-systemctl restart sshd
+claude        # Claude Code
+codex         # Codex
+gemini        # Gemini CLI
+opencode      # OpenCode
 ```
 
-### 3. Setup Firewall
+## Headless Mode
+
+Skip the wizard with environment variables:
 
 ```bash
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp
-ufw allow 7860/tcp
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw enable
+HETZNER_TOKEN=your-token \
+SERVER_TYPE=cpx21 \
+SERVER_LOCATION=ash \
+NEW_USER=ubuntu \
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh)"
 ```
 
-### 4. Install Fail2ban
+All flags:
+
+| Variable | Default | Options |
+|----------|---------|---------|
+| `HETZNER_TOKEN` | (required) | Your Hetzner API token |
+| `SERVER_TYPE` | `cpx21` | `cpx11`, `cpx21`, `cpx31`, `cpx41` |
+| `SERVER_LOCATION` | `ash` | `ash`, `hil`, `nbg1`, `hel1` |
+| `NEW_USER` | `ubuntu` | Any valid Linux username |
+| `SSH_KEY_PATH` | auto-generated | Path to existing SSH private key |
+| `INSTALL_CLAUDE_CODE` | `true` | `true` / `false` |
+| `INSTALL_CODEX` | `true` | `true` / `false` |
+| `INSTALL_GEMINI_CLI` | `true` | `true` / `false` |
+| `INSTALL_OPENCODE` | `true` | `true` / `false` |
+| `INSTALL_DOCKER` | `true` | `true` / `false` |
+| `INSTALL_BUN` | `true` | `true` / `false` |
+| `INSTALL_TAILSCALE` | `false` | `true` / `false` |
+
+## Tailscale
+
+The setup wizard offers to install [Tailscale](https://tailscale.com) — a private VPN mesh that lets you access your server via a secure IP without exposing ports to the public internet.
+
+During setup, you'll be prompted to authenticate by visiting a URL in your browser. Once connected, you can SSH via your server's Tailscale IP instead of its public IP.
+
+To install Tailscale later on an existing server:
 
 ```bash
-apt-get install fail2ban
-
-# Create config
-cat > /etc/fail2ban/jail.local << 'EOF'
-[DEFAULT]
-bantime = 1h
-findtime = 10m
-maxretry = 3
-
-[sshd]
-enabled = true
-port = 22
-filter = sshd
-logpath = /var/log/auth.log
-maxretry = 3
-EOF
-
-systemctl enable fail2ban
-systemctl start fail2ban
-```
-
-### 5. Install Homebrew
-
-```bash
-# As the new user (claw)
-su - claw
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-```
-
-### 6. Install Docker
-
-```bash
-# As root
-curl -fsSL https://get.docker.com | sh
-usermod -aG docker claw
-systemctl enable docker
-systemctl start docker
-```
-
-### 7. Install Node.js
-
-```bash
-# As root
-curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
-```
-
-### 8. Install OpenClaw
-
-```bash
-# As the new user (claw) — not root!
-su - claw
-npm install -g openclaw
-openclaw onboard
-```
-
-## Post-Setup Checklist
-
-After running the script:
-
-- [ ] Copy SSH key to new user: `ssh-copy-id claw@<server-ip>`
-- [ ] Test SSH login as new user (keep root session open!)
-- [ ] Verify firewall: `sudo ufw status`
-- [ ] Verify fail2ban: `sudo fail2ban-client status`
-- [ ] Verify swap: `swapon --show`
-- [ ] If using `--install-openclaw`: edit `/etc/openclaw-secrets` with your tokens
-- [ ] If using `--install-openclaw`: review `~/.openclaw/workspace/SECURITY.md`
-- [ ] Run `openclaw doctor` to verify everything works
-- [ ] Run `openclaw security audit` to check for issues
-
-## Security Notes
-
-### SSH Keys
-
-Generate a key pair if you don't have one:
-
-```bash
-ssh-keygen -t ed25519 -C "your-email@example.com"
-```
-
-Copy to server:
-
-```bash
-ssh-copy-id claw@<server-ip>
-```
-
-### Firewall Rules
-
-View active rules:
-
-```bash
-sudo ufw status verbose
-```
-
-Add custom rules:
-
-```bash
-# Allow specific IP
-sudo ufw allow from 192.168.1.100
-
-# Allow port range
-sudo ufw allow 8000:9000/tcp
-```
-
-### Tailscale (Recommended)
-
-For secure remote access to the gateway and other services, [Tailscale](https://tailscale.com/) is recommended over exposing ports publicly. With Tailscale, you can access services like OpenClaw's gateway over a private mesh VPN without opening firewall ports to the internet.
-
-```bash
-# Install Tailscale
 curl -fsSL https://tailscale.com/install.sh | sh
 tailscale up
-
-# Then access services via the Tailscale IP instead of public IP
-```
-
-### Fail2ban Monitoring
-
-Check banned IPs:
-
-```bash
-sudo fail2ban-client status sshd
-```
-
-Unban an IP:
-
-```bash
-sudo fail2ban-client set sshd unbanip 192.168.1.100
 ```
 
 ## Troubleshooting
 
-### Can't SSH After Hardening
+### Can't SSH after setup
 
-If you locked yourself out:
-
-1. Access server via console (Hetzner/DigitalOcean/Vultr console)
-2. Restore SSH config: `cp /etc/ssh/sshd_config.bak.* /etc/ssh/sshd_config`
-3. Restart SSH: `systemctl restart sshd`
-
-### Permission Denied (Docker)
-
-Log out and back in for group changes to take effect:
+Access via Hetzner console, then restore SSH config:
 
 ```bash
-exit
-ssh claw@<server-ip>
+sudo rm /etc/ssh/sshd_config.d/99-dodo-vps-hardening.conf
+sudo systemctl restart ssh
 ```
 
-Or run: `newgrp docker`
+### npm install -g fails
 
-### Homebrew Not Found
-
-Ensure it's in your PATH:
+The npm global prefix is set to `~/.npm-global`. Make sure it's in your PATH:
 
 ```bash
-echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"' >> ~/.bashrc
-source ~/.bashrc
+export PATH="$HOME/.npm-global/bin:$PATH"
 ```
 
-## Environment Variables
-
-Customize the setup with env vars:
+### Homebrew not found
 
 ```bash
-# Create user with different name
-NEW_USER=myuser sudo ./setup.sh
-
-# Use custom SSH port
-SSH_PORT=2222 sudo ./setup.sh
-
-# Use custom OpenClaw port
-OPENCLAW_PORT=8080 sudo ./setup.sh
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 ```
-
-## Recommended VPS Specs for OpenClaw
-
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| RAM | 4 GB | 8 GB+ |
-| CPU | 2 cores | 4 cores |
-| Storage | 20 GB SSD | 50 GB SSD |
-| OS | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS |
 
 ## Tested On
 
 - Ubuntu 22.04 LTS
 - Ubuntu 24.04 LTS
-- Hetzner Cloud
-- DigitalOcean Droplets
-- AWS EC2 (t3.medium+)
-
-## Contributing
-
-PRs welcome! Please test on a fresh VPS before submitting.
+- Hetzner Cloud (CPX series)
 
 ## License
 
