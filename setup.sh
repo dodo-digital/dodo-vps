@@ -542,7 +542,7 @@ setup_local_ssh_alias() {
 
     log "Alias '${alias_name}' added to $(basename "$shell_rc")"
     echo ""
-    echo "  You can now connect to your server by typing:"
+    echo -e "  ${YELLOW}Open a new terminal${NC} to use it, then connect by typing:"
     echo ""
     echo -e "    ${BOLD}${alias_name}${NC}"
     if [ -n "$TAILSCALE_IP" ]; then
@@ -598,6 +598,7 @@ print_completion() {
     echo "    cc     — claude --dangerously-skip-permissions"
     echo "    cx     — codex --full-auto"
     echo "    agent  — launch Claude Code in a background tmux session"
+    echo "    cass   — search all coding agent session histories"
     echo "    ports  — show listening ports"
     echo ""
     echo -e "  ${YELLOW}Tip:${NC} Add API keys to ~/.bashrc on the server so they persist."
@@ -870,6 +871,109 @@ install_opencode() {
     quiet "Installing OpenCode" su - "$NEW_USER" -c 'export PATH="$HOME/.npm-global/bin:$PATH" && npm install -g opencode-ai@latest' || warn "OpenCode install failed — install manually later"
 }
 
+install_gh_cli() {
+    log "Installing GitHub CLI..."
+    if command -v gh &>/dev/null; then warn "Already installed"; return; fi
+    {
+        mkdir -p -m 755 /etc/apt/keyrings
+        wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+        chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+        apt-get update
+    } >> "$SETUP_LOG" 2>&1
+    quiet "Installing gh" apt-get install -y gh
+    log "GitHub CLI installed"
+}
+
+prompt_github_login() {
+    echo ""
+    echo -e "  ${BOLD}GitHub CLI is installed.${NC}"
+    echo "  Logging in lets you create repos, open PRs, and manage issues from the terminal."
+    echo ""
+    if ask_yes_no "Log into GitHub now? (you can do this later with 'gh auth login')" "n"; then
+        echo ""
+        su - "$NEW_USER" -c "gh auth login" || warn "GitHub login failed — run 'gh auth login' later"
+        echo ""
+    fi
+}
+
+install_cass() {
+    log "Installing CASS (Coding Agent Session Search)..."
+    if su - "$NEW_USER" -c 'command -v cass' &>/dev/null; then warn "Already installed"; return; fi
+    if ! curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/main/install.sh -o /tmp/cass-install.sh 2>> "$SETUP_LOG"; then
+        warn "CASS download failed — install manually later: https://github.com/Dicklesworthstone/coding_agent_session_search"
+        return 0
+    fi
+    quiet "Installing CASS" su - "$NEW_USER" -c "bash /tmp/cass-install.sh --easy-mode" || warn "CASS install failed — install manually later"
+    rm -f /tmp/cass-install.sh
+    log "CASS installed"
+}
+
+setup_home_directories() {
+    log "Setting up home directory structure..."
+    local home="/home/$NEW_USER"
+
+    mkdir -p "$home/projects"
+
+    chown -R "$NEW_USER:$NEW_USER" "$home/projects"
+    log "Created ~/projects"
+}
+
+setup_claude_md() {
+    log "Setting up Claude Code project context..."
+    local home="/home/$NEW_USER"
+
+    cat > "$home/CLAUDE.md" << 'CLMD'
+# Coding Agent VPS
+
+You are running on a cloud VPS set up by dodo-vps for coding agent workflows.
+
+## Environment
+
+- **OS:** Ubuntu 24.04 LTS
+- **User:** Non-root with passwordless sudo
+- **Shell:** bash
+- **Projects:** ~/projects — clone repos and work here
+
+## Available Tools
+
+| Command | What it does |
+|---------|-------------|
+| `claude` | Claude Code (normal mode) |
+| `cc` | Claude Code with auto-accept permissions |
+| `codex` | Codex CLI (normal mode) |
+| `cx` | Codex with full auto-approval |
+| `gemini` | Gemini CLI |
+| `opencode` | OpenCode |
+| `gh` | GitHub CLI (repos, PRs, issues) |
+| `cass` | Search across all coding agent session histories |
+| `agent` | Launch Claude Code in a background tmux session |
+
+## Server Shortcuts
+
+| Command | What it does |
+|---------|-------------|
+| `ports` | Show listening ports |
+| `mem` | Memory usage |
+| `disk` | Disk usage |
+| `logs` | Follow system logs |
+
+## How to Help the User
+
+- **Navigation:** The user may be unfamiliar with Linux. Help them move around, find files, and understand the filesystem.
+- **Projects:** When cloning repos, use `~/projects/` as the default location.
+- **API keys:** If a command fails due to missing credentials, guide the user to set the relevant environment variable (e.g., `export ANTHROPIC_API_KEY=...`) and suggest adding it to `~/.bashrc` for persistence.
+- **Installing packages:** Use `apt` for system packages, `npm` for Node tools, `brew` for dev tools. The user has passwordless sudo.
+- **Background agents:** Use `tmux` to run long-running tasks. The `agent` alias launches Claude Code in a detached tmux session.
+- **Session history:** Use `cass` to search past coding sessions across all agents.
+- **GitHub:** `gh` is installed. Help the user authenticate (`gh auth login`) and manage repos from the terminal.
+- **Creating aliases:** If the user wants a new shortcut, add it to `~/.bash_aliases` and source it.
+CLMD
+
+    chown "$NEW_USER:$NEW_USER" "$home/CLAUDE.md"
+    log "CLAUDE.md created at ~/CLAUDE.md"
+}
+
 install_tailscale() {
     log "Installing Tailscale..."
     if command -v tailscale &>/dev/null; then
@@ -1133,6 +1237,56 @@ setup_tmp_cleanup() {
     log "/tmp cleanup installed (daily at 4am)"
 }
 
+setup_welcome_motd() {
+    log "Setting up login welcome message..."
+
+    # Disable Ubuntu's default MOTD noise (news, ads, livepatch, etc.)
+    chmod -x /etc/update-motd.d/10-help-text 2>/dev/null || true
+    chmod -x /etc/update-motd.d/50-motd-news 2>/dev/null || true
+    chmod -x /etc/update-motd.d/88-esm-announce 2>/dev/null || true
+    chmod -x /etc/update-motd.d/91-contract-ua-esm-status 2>/dev/null || true
+
+    cat > /etc/update-motd.d/10-dodo-vps << 'MOTD'
+#!/bin/bash
+# dodo-vps welcome message — shown on SSH login
+
+BOLD='\033[1m'
+DIM='\033[2m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo ""
+echo -e "${BLUE}${BOLD}  Coding Agent VPS${NC}  ${DIM}powered by dodo-vps${NC}"
+echo ""
+echo -e "  ${BOLD}Quick Launch${NC}"
+echo -e "  ${CYAN}cc${NC}        Claude Code (auto-accept)      ${CYAN}claude${NC}    Claude Code (normal)"
+echo -e "  ${CYAN}cx${NC}        Codex (full auto)               ${CYAN}codex${NC}     Codex (normal)"
+echo -e "  ${CYAN}gemini${NC}    Gemini CLI                      ${CYAN}opencode${NC}  OpenCode"
+echo -e "  ${CYAN}agent${NC}     Claude in background tmux        ${CYAN}gh${NC}        GitHub CLI"
+echo -e "  ${CYAN}cass${NC}      Search all agent session history"
+echo ""
+echo -e "  ${BOLD}Server${NC}"
+echo -e "  ${CYAN}ports${NC}     Show listening ports             ${CYAN}mem${NC}       Memory usage"
+echo -e "  ${CYAN}disk${NC}      Disk usage                       ${CYAN}logs${NC}      Follow system logs"
+echo ""
+echo -e "  ${BOLD}Getting Started${NC}"
+echo -e "  Set your API keys, then launch any agent:"
+echo ""
+echo -e "    export ANTHROPIC_API_KEY=sk-ant-..."
+echo -e "    cc"
+echo ""
+echo -e "  ${DIM}Tip: Add keys to ~/.bashrc so they persist across sessions.${NC}"
+echo -e "  ${DIM}Want a new alias? Run ${NC}${CYAN}cc${NC}${DIM} and ask Claude Code to create it for you.${NC}"
+echo ""
+MOTD
+
+    chmod +x /etc/update-motd.d/10-dodo-vps
+    log "Welcome message configured"
+}
+
 print_server_summary() {
     echo ""
     echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
@@ -1140,7 +1294,7 @@ print_server_summary() {
     echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
     echo ""
     echo "  Installed:"
-    echo "    - Node.js 22, Homebrew, Bun"
+    echo "    - Node.js 22, Homebrew, Bun, GitHub CLI, CASS"
     [ "$INSTALL_DOCKER" = true ]      && echo "    - Docker"
     [ "$INSTALL_CLAUDE_CODE" = true ] && echo "    - Claude Code"
     [ "$INSTALL_CODEX" = true ]       && echo "    - Codex"
@@ -1216,13 +1370,23 @@ server_main() {
     if [ "$INSTALL_CODEX" = true ]; then install_codex; fi
     if [ "$INSTALL_GEMINI_CLI" = true ]; then install_gemini_cli; fi
     if [ "$INSTALL_OPENCODE" = true ]; then install_opencode; fi
+    install_gh_cli
+    install_cass
 
     # Claude Code config (statusline)
     if [ "$INSTALL_CLAUDE_CODE" = true ]; then setup_claude_config; fi
 
-    # Aliases & cleanup
+    # User environment
+    setup_home_directories
+    setup_claude_md
+
+    # Aliases, welcome message & cleanup
     setup_agent_aliases
+    setup_welcome_motd
     setup_tmp_cleanup
+
+    # Interactive prompts (near end so all tools are installed first)
+    prompt_github_login
 
     # Tailscale (last because it requires interactive auth)
     if [ "$INSTALL_TAILSCALE" = true ]; then install_tailscale; fi
