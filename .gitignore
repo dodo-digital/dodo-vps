@@ -1,7 +1,2 @@
-# Terraform state and secrets
-terraform/terraform.tfvars
-terraform/*.tfstate*
-terraform/.terraform/
-
 # OS files
 .DS_Store

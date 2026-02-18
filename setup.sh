@@ -1227,6 +1227,9 @@ server_main() {
     # Tailscale (last because it requires interactive auth)
     if [ "$INSTALL_TAILSCALE" = true ]; then install_tailscale; fi
 
+    # Make setup log readable by the service user
+    chown "$NEW_USER:$NEW_USER" "$SETUP_LOG"
+
     print_server_summary
 }
 
