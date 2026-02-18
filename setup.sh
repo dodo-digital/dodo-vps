@@ -26,6 +26,10 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+# ─── Version ─────────────────────────────────────────────────────────
+DODO_VPS_VERSION="v1.0.0"
+DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
+
 # ─── Configuration ────────────────────────────────────────────────────
 NEW_USER="${NEW_USER:-ubuntu}"
 SSH_PORT="${SSH_PORT:-22}"
@@ -228,7 +232,7 @@ run_remote_setup() {
     log "SSHing into $SERVER_IP and running server setup..."
     echo ""
 
-    local script_url="https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh"
+    local script_url="${DODO_VPS_RAW}/setup.sh"
     local ssh_opts="-i $DODO_SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
     # Download script to server first (keeps stdin free for interactive prompts)
@@ -1222,7 +1226,7 @@ setup_tmp_cleanup() {
     if [ -f "$SCRIPT_DIR/scripts/tmp-cleanup.sh" ]; then
         cp "$SCRIPT_DIR/scripts/tmp-cleanup.sh" "/home/$NEW_USER/.local/bin/tmp-cleanup"
     else
-        curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/scripts/tmp-cleanup.sh \
+        curl -fsSL "${DODO_VPS_RAW}/scripts/tmp-cleanup.sh" \
             -o "/home/$NEW_USER/.local/bin/tmp-cleanup"
     fi
     chmod +x "/home/$NEW_USER/.local/bin/tmp-cleanup"
