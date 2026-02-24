@@ -1,0 +1,38 @@
+name: Notify Rufus
+
+on:
+  issues:
+    types: [opened, reopened]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, reopened]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    # Skip events triggered by bots (prevents Rufus from responding to itself)
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.actor != 'chungbot' &&
+      !endsWith(github.actor, '[bot]')
+    steps:
+      - name: Post event to OpenClaw
+        env:
+          OPENCLAW_HOOK_TOKEN: ${{ secrets.OPENCLAW_HOOK_TOKEN }}
+        run: |
+          # Build the payload with event metadata
+          PAYLOAD=$(jq -n \
+            --arg event_type "${{ github.event_name }}" \
+            --argjson event_payload '${{ toJson(github.event) }}' \
+            '$event_payload + {"_eventType": $event_type}')
+
+          curl -sf -X POST \
+            "https://ubuntu-4gb-ash-1.tail1d5130.ts.net/hooks/github" \
+            -H "Authorization: Bearer ${OPENCLAW_HOOK_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: ${{ github.event_name }}" \
+            -d "${PAYLOAD}" \
+            --max-time 10 || echo "Warning: webhook delivery failed (non-fatal)"
