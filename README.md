@@ -37,7 +37,7 @@ You don't need these during setup — the agents are installed either way. But y
 Run from your laptop:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh)"
+tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o "$tmp" && /bin/bash "$tmp"
 ```
 
 The wizard walks you through everything: server size, location, which agents to install. Takes about 10 minutes.
@@ -126,7 +126,7 @@ HETZNER_TOKEN=your-token \
 SERVER_TYPE=cpx21 \
 SERVER_LOCATION=ash \
 NEW_USER=ubuntu \
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh)"
+  bash -c 'tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o "$tmp" && /bin/bash "$tmp"'
 ```
 
 All flags:

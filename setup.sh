@@ -4,7 +4,7 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh)"
+#   tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o "$tmp" && /bin/bash "$tmp"
 #
 # The script handles everything:
 #   1. Creates a Hetzner server via API
@@ -27,7 +27,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.0.0"
+DODO_VPS_VERSION="v1.0.1"
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -239,9 +239,18 @@ run_remote_setup() {
     ssh $ssh_opts root@"$SERVER_IP" \
         "curl -fsSL $script_url -o /tmp/dodo-vps-setup.sh && chmod +x /tmp/dodo-vps-setup.sh"
 
-    # Run with -t for pseudo-terminal so interactive prompts work
-    ssh -t $ssh_opts root@"$SERVER_IP" \
-        "NEW_USER=$NEW_USER INSTALL_DOCKER=$INSTALL_DOCKER INSTALL_CLAUDE_CODE=$INSTALL_CLAUDE_CODE INSTALL_CODEX=$INSTALL_CODEX INSTALL_GEMINI_CLI=$INSTALL_GEMINI_CLI INSTALL_OPENCODE=$INSTALL_OPENCODE INSTALL_BUN=$INSTALL_BUN INSTALL_TAILSCALE=$INSTALL_TAILSCALE bash /tmp/dodo-vps-setup.sh --on-server"
+    # Run with -t for pseudo-terminal so interactive prompts work.
+    # If setup fails, fetch the server log while root SSH still works so the
+    # person running the installer is not forced into the cloud console.
+    if ! ssh -t $ssh_opts root@"$SERVER_IP" \
+        "NEW_USER=$NEW_USER INSTALL_DOCKER=$INSTALL_DOCKER INSTALL_CLAUDE_CODE=$INSTALL_CLAUDE_CODE INSTALL_CODEX=$INSTALL_CODEX INSTALL_GEMINI_CLI=$INSTALL_GEMINI_CLI INSTALL_OPENCODE=$INSTALL_OPENCODE INSTALL_BUN=$INSTALL_BUN INSTALL_TAILSCALE=$INSTALL_TAILSCALE bash /tmp/dodo-vps-setup.sh --on-server"; then
+        echo ""
+        warn "Server setup failed. Fetching the last lines of the setup log..."
+        echo ""
+        ssh $ssh_opts root@"$SERVER_IP" "tail -120 $SETUP_LOG 2>/dev/null || true" || true
+        echo ""
+        error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
+    fi
 }
 
 run_wizard_local() {
@@ -683,7 +692,16 @@ create_user() {
 setup_ssh_hardening() {
     log "Configuring SSH hardening..."
     mkdir -p /etc/ssh/sshd_config.d
-    cat > /etc/ssh/sshd_config.d/99-dodo-vps-hardening.conf << 'EOF'
+
+    # Some fresh Ubuntu images do not have this runtime directory until sshd
+    # starts. Without it, `sshd -t` can fail even when the config is valid.
+    mkdir -p /run/sshd
+    chmod 755 /run/sshd
+
+    local hardening_file="/etc/ssh/sshd_config.d/99-dodo-vps-hardening.conf"
+    local validation_output="/tmp/dodo-vps-sshd-validation.log"
+
+    cat > "$hardening_file" << 'EOF'
 # Security hardening applied by dodo-vps
 PermitRootLogin no
 PasswordAuthentication no
@@ -692,12 +710,29 @@ MaxAuthTries 3
 ClientAliveInterval 300
 ClientAliveCountMax 2
 EOF
-    if sshd -t >> "$SETUP_LOG" 2>&1; then
-        # Ubuntu 24.04 uses "ssh", older versions use "sshd"
-        systemctl restart ssh 2>/dev/null || systemctl restart sshd
+
+    if sshd -t > "$validation_output" 2>&1; then
+        cat "$validation_output" >> "$SETUP_LOG"
+        # Ubuntu 24.04 uses "ssh", older versions use "sshd".
+        if systemctl restart ssh >> "$SETUP_LOG" 2>&1 || systemctl restart sshd >> "$SETUP_LOG" 2>&1; then
+            rm -f "$validation_output"
+        else
+            cat "$validation_output" >&2
+            rm -f "$validation_output"
+            error "SSH service restart failed after config validation"
+        fi
         log "SSH hardened. Root login disabled, key auth only."
     else
-        error "sshd config validation failed"
+        cat "$validation_output" >> "$SETUP_LOG"
+        warn "SSH hardening config failed validation; removing it and continuing."
+        warn "Validation output:"
+        sed 's/^/  /' "$validation_output" >&2
+        rm -f "$validation_output" "$hardening_file"
+        if sshd -t >> "$SETUP_LOG" 2>&1; then
+            warn "SSH hardening skipped. Existing SSH config remains unchanged."
+        else
+            error "Existing sshd config is invalid even after removing dodo-vps hardening."
+        fi
     fi
 }
 
@@ -1414,7 +1449,8 @@ parse_args() {
                 echo "dodo-vps — One command to launch a coding-agent-ready VPS"
                 echo ""
                 echo "Usage:"
-                echo "  /bin/bash -c \"\$(curl -fsSL .../setup.sh)\"   Run the wizard (from your laptop)"
+                echo "  tmp=\"\$(mktemp)\" && curl -fsSL .../setup.sh -o \"\$tmp\" && /bin/bash \"\$tmp\""
+                echo "                                      Run the wizard (from your laptop)"
                 echo "  sudo ./setup.sh --on-server                Run server setup directly on a VPS"
                 echo ""
                 echo "Environment variables (headless mode):"
