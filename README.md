@@ -138,6 +138,7 @@ All flags:
 | `SERVER_LOCATION` | `ash` | `ash`, `hil`, `nbg1`, `hel1` |
 | `NEW_USER` | `ubuntu` | Any valid Linux username |
 | `SSH_KEY_PATH` | auto-generated | Path to existing SSH private key |
+| `EXISTING_SERVER_IP` | (empty) | Existing server IP to resume setup without creating a new VPS |
 | `INSTALL_CLAUDE_CODE` | `true` | `true` / `false` |
 | `INSTALL_CODEX` | `true` | `true` / `false` |
 | `INSTALL_GEMINI_CLI` | `true` | `true` / `false` |
@@ -145,6 +146,17 @@ All flags:
 | `INSTALL_DOCKER` | `true` | `true` / `false` |
 | `INSTALL_BUN` | `true` | `true` / `false` |
 | `INSTALL_TAILSCALE` | `false` | `true` / `false` |
+
+## Resume a Failed Setup
+
+If server creation succeeded but setup failed, rerun setup against the same server instead of creating a new one:
+
+```bash
+tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o "$tmp" && \
+  EXISTING_SERVER_IP=<server-ip> SSH_KEY_PATH=~/.ssh/dodo-vps_ed25519 /bin/bash "$tmp"
+```
+
+The installer also prints this command automatically when the server-side setup fails.
 
 ## Tailscale
 

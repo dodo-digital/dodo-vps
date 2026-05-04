@@ -27,7 +27,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.0.1"
+DODO_VPS_VERSION="v1.0.2"
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -38,6 +38,7 @@ SERVER_TYPE="${SERVER_TYPE:-cpx21}"
 SERVER_LOCATION="${SERVER_LOCATION:-ash}"
 SERVER_NAME="${SERVER_NAME:-}"
 SSH_KEY_PATH="${SSH_KEY_PATH:-}"
+EXISTING_SERVER_IP="${EXISTING_SERVER_IP:-}"
 RUN_WIZARD="${RUN_WIZARD:-true}"
 INSTALL_DOCKER="${INSTALL_DOCKER:-true}"
 INSTALL_CLAUDE_CODE="${INSTALL_CLAUDE_CODE:-true}"
@@ -48,7 +49,7 @@ INSTALL_BUN="${INSTALL_BUN:-true}"
 INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 
 # Set during execution
-SERVER_IP=""
+SERVER_IP="$EXISTING_SERVER_IP"
 TAILSCALE_IP=""
 DODO_SSH_KEY="$HOME/.ssh/dodo-vps_ed25519"
 
@@ -133,9 +134,17 @@ setup_ssh_key() {
     # Reuse existing key if one exists
     if [ -f "$DODO_SSH_KEY" ] && [ -f "${DODO_SSH_KEY}.pub" ]; then
         log "Found existing key: $DODO_SSH_KEY"
+        if [ ! -t 0 ]; then
+            log "Using existing key in non-interactive mode"
+            return
+        fi
         if ask_yes_no "Use this key?" "y"; then
             return
         fi
+    fi
+
+    if [ -n "$EXISTING_SERVER_IP" ]; then
+        error "Resuming an existing server requires SSH_KEY_PATH or an existing $DODO_SSH_KEY key pair."
     fi
 
     # Generate a dedicated key
@@ -248,6 +257,11 @@ run_remote_setup() {
         warn "Server setup failed. Fetching the last lines of the setup log..."
         echo ""
         ssh $ssh_opts root@"$SERVER_IP" "tail -120 $SETUP_LOG 2>/dev/null || true" || true
+        echo ""
+        echo "  To retry setup on this same server instead of creating a new one, run:"
+        echo ""
+        echo "    tmp=\"\$(mktemp)\" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o \"\$tmp\" && \\"
+        echo "      EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY /bin/bash \"\$tmp\""
         echo ""
         error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
     fi
@@ -628,7 +642,12 @@ local_main() {
         command -v "$cmd" &>/dev/null || error "Missing required tool: $cmd"
     done
 
-    if [ "$RUN_WIZARD" = true ] && [ -t 0 ]; then
+    if [ -n "$EXISTING_SERVER_IP" ]; then
+        step "Resume Existing Server"
+        log "Using existing server: $EXISTING_SERVER_IP"
+        echo "  No new Hetzner server will be created."
+        echo ""
+    elif [ "$RUN_WIZARD" = true ] && [ -t 0 ]; then
         run_wizard_local
     else
         # Headless mode — need HETZNER_TOKEN set
@@ -636,7 +655,9 @@ local_main() {
     fi
 
     setup_ssh_key
-    create_hetzner_server
+    if [ -z "$EXISTING_SERVER_IP" ]; then
+        create_hetzner_server
+    fi
     wait_for_server
     run_remote_setup
 
@@ -1459,6 +1480,7 @@ parse_args() {
                 echo "  SERVER_LOCATION     ash/hil/nbg1/hel1 (default: ash)"
                 echo "  NEW_USER            Username (default: ubuntu)"
                 echo "  SSH_KEY_PATH        Path to SSH private key"
+                echo "  EXISTING_SERVER_IP  Existing server IP to resume setup without creating a VPS"
                 echo "  INSTALL_DOCKER      true/false (default: true)"
                 echo "  INSTALL_CLAUDE_CODE true/false (default: true)"
                 echo "  INSTALL_CODEX       true/false (default: true)"
