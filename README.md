@@ -37,7 +37,8 @@ You don't need these during setup — the agents are installed either way. But y
 Run from your laptop:
 
 ```bash
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.2/setup.sh -o "$tmp" && /bin/bash "$tmp"
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh
+bash dodo-vps-setup.sh
 ```
 
 The wizard walks you through everything: server size, location, which agents to install. Takes about 10 minutes.
@@ -126,7 +127,13 @@ HETZNER_TOKEN=your-token \
 SERVER_TYPE=cpx21 \
 SERVER_LOCATION=ash \
 NEW_USER=ubuntu \
-  bash -c 'tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.2/setup.sh -o "$tmp" && /bin/bash "$tmp"'
+  bash dodo-vps-setup.sh
+```
+
+If you have not downloaded the script yet:
+
+```bash
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh
 ```
 
 All flags:
@@ -152,8 +159,8 @@ All flags:
 If server creation succeeded but setup failed, rerun setup against the same server instead of creating a new one:
 
 ```bash
-tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.2/setup.sh -o "$tmp" && \
-  EXISTING_SERVER_IP=<server-ip> SSH_KEY_PATH=~/.ssh/dodo-vps_ed25519 /bin/bash "$tmp"
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh
+EXISTING_SERVER_IP=<server-ip> SSH_KEY_PATH=~/.ssh/dodo-vps_ed25519 bash dodo-vps-setup.sh
 ```
 
 The installer also prints this command automatically when the server-side setup fails.

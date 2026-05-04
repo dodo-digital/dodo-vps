@@ -4,7 +4,8 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.2/setup.sh -o "$tmp" && /bin/bash "$tmp"
+#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh
+#   bash dodo-vps-setup.sh
 #
 # The script handles everything:
 #   1. Creates a Hetzner server via API
@@ -27,7 +28,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.0.2"
+DODO_VPS_VERSION="v1.0.3"
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -260,8 +261,8 @@ run_remote_setup() {
         echo ""
         echo "  To retry setup on this same server instead of creating a new one, run:"
         echo ""
-        echo "    tmp=\"\$(mktemp)\" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.2/setup.sh -o \"\$tmp\" && \\"
-        echo "      EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY /bin/bash \"\$tmp\""
+        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh"
+        echo "    EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY bash dodo-vps-setup.sh"
         echo ""
         error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
     fi
@@ -1470,7 +1471,8 @@ parse_args() {
                 echo "dodo-vps — One command to launch a coding-agent-ready VPS"
                 echo ""
                 echo "Usage:"
-                echo "  tmp=\"\$(mktemp)\" && curl -fsSL .../setup.sh -o \"\$tmp\" && /bin/bash \"\$tmp\""
+                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh"
+                echo "  bash dodo-vps-setup.sh"
                 echo "                                      Run the wizard (from your laptop)"
                 echo "  sudo ./setup.sh --on-server                Run server setup directly on a VPS"
                 echo ""
