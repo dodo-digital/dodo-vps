@@ -4,7 +4,7 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o "$tmp" && /bin/bash "$tmp"
+#   tmp="$(mktemp)" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.2/setup.sh -o "$tmp" && /bin/bash "$tmp"
 #
 # The script handles everything:
 #   1. Creates a Hetzner server via API
@@ -260,7 +260,7 @@ run_remote_setup() {
         echo ""
         echo "  To retry setup on this same server instead of creating a new one, run:"
         echo ""
-        echo "    tmp=\"\$(mktemp)\" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh -o \"\$tmp\" && \\"
+        echo "    tmp=\"\$(mktemp)\" && curl -fsSL https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.2/setup.sh -o \"\$tmp\" && \\"
         echo "      EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY /bin/bash \"\$tmp\""
         echo ""
         error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
