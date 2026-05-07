@@ -912,6 +912,14 @@ install_docker() {
 }
 
 install_claude_code() {
+    # Remove prior bun/npm-installed claude so the native installer's
+    # ~/.local/bin/claude isn't shadowed on PATH (bun/npm bin dirs often come first).
+    su - "$NEW_USER" -c '
+        command -v bun >/dev/null 2>&1 && bun remove -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
+        command -v npm >/dev/null 2>&1 && npm uninstall -g @anthropic-ai/claude-code >/dev/null 2>&1 || true
+        rm -f "$HOME/.bun/bin/claude"
+    ' >> "$SETUP_LOG" 2>&1 || true
+
     if ! curl -fsSL https://claude.ai/install.sh -o /tmp/claude-install.sh 2>> "$SETUP_LOG"; then
         warn "Claude Code download failed — install manually later"
         return 0
@@ -1100,6 +1108,21 @@ if [ -f ~/.bash_aliases ]; then
     . ~/.bash_aliases
 fi
 EOF
+    fi
+
+    # Also source from .zshrc if the user has one — alias contents are POSIX
+    # `alias` lines that work fine in zsh, and users who switch shells would
+    # otherwise silently lose cc/cx/agent/ports/logs/disk/mem.
+    local zshrc="/home/$NEW_USER/.zshrc"
+    if [ -f "$zshrc" ] && ! grep -q '\.bash_aliases' "$zshrc" 2>/dev/null; then
+        cat >> "$zshrc" << 'EOF'
+
+# Load custom aliases
+if [ -f ~/.bash_aliases ]; then
+    . ~/.bash_aliases
+fi
+EOF
+        chown "$NEW_USER:$NEW_USER" "$zshrc"
     fi
 
     log "Aliases configured (cc, cx, agent, ports, logs, disk, mem)"
