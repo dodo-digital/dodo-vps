@@ -4,7 +4,7 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh
+#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.4/setup.sh
 #   bash dodo-vps-setup.sh
 #
 # The script handles everything:
@@ -28,7 +28,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.0.3"
+DODO_VPS_VERSION="v1.0.4"
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -111,11 +111,91 @@ ask_yes_no() {
 }
 
 # ─── Hetzner API helpers ─────────────────────────────────────────────
+normalize_hetzner_token() {
+    local raw
+    raw=$(cat)
+    HETZNER_TOKEN_INPUT="$raw" python3 <<'PY'
+import re, sys
+import os
+
+s = os.environ.get("HETZNER_TOKEN_INPUT", "")
+s = s.replace("\r", "").replace("\n", "").strip()
+
+# Accept common accidental pastes:
+#   export HETZNER_TOKEN=...
+#   HETZNER_TOKEN="..."
+m = re.search(r"(?:export\s+)?HETZNER_TOKEN\s*=\s*([^\s]+)", s)
+if m:
+    s = m.group(1)
+
+s = s.strip().strip("\"").strip("'").strip()
+print(s, end="")
+PY
+}
+
+token_fingerprint() {
+    local raw
+    raw=$(cat)
+    HETZNER_TOKEN_INPUT="$raw" python3 <<'PY'
+import hashlib, sys
+import os
+
+s = os.environ.get("HETZNER_TOKEN_INPUT", "")
+print(f"length={len(s)}, sha256={hashlib.sha256(s.encode()).hexdigest()[:8]}")
+PY
+}
+
 hetzner_api() {
     local method="$1" endpoint="$2" data="${3:-}"
     local args=(-s -H "Authorization: Bearer $HETZNER_TOKEN" -H "Content-Type: application/json")
     [ -n "$data" ] && args+=(-d "$data")
     curl "${args[@]}" -X "$method" "https://api.hetzner.cloud/v1${endpoint}"
+}
+
+HETZNER_LAST_ERROR=""
+validate_hetzner_token() {
+    local response http_status body
+
+    response=$(curl -sS -w '\n%{http_code}' \
+        -H "Authorization: Bearer $HETZNER_TOKEN" \
+        -H "Content-Type: application/json" \
+        -X GET "https://api.hetzner.cloud/v1/servers" 2>&1) || {
+        HETZNER_LAST_ERROR="Network error while contacting Hetzner: $response"
+        return 1
+    }
+
+    http_status=$(printf '%s\n' "$response" | tail -n 1)
+    body=$(printf '%s\n' "$response" | sed '$d')
+
+    if [ "$http_status" = "200" ] && printf '%s' "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'servers' in d" 2>/dev/null; then
+        return 0
+    fi
+
+    HETZNER_LAST_ERROR=$(HETZNER_ERROR_BODY="$body" python3 - "$http_status" <<'PY'
+import json, os, sys
+
+status = sys.argv[1]
+body = os.environ.get("HETZNER_ERROR_BODY", "")
+message = body.strip()
+try:
+    data = json.loads(body)
+    err = data.get("error", {})
+    if isinstance(err, dict):
+        message = err.get("message") or err.get("code") or message
+except Exception:
+    pass
+
+if status == "401":
+    hint = "Make sure this is a Hetzner Cloud project API token, not a Robot/console password, and that it was copied completely."
+elif status == "403":
+    hint = "Make sure the token has Read & Write permissions for this Hetzner Cloud project."
+else:
+    hint = "Open Hetzner Cloud Console > Project > Security > API Tokens and generate a new Read & Write token."
+
+print(f"HTTP {status}: {message}\n  {hint}")
+PY
+)
+    return 1
 }
 
 # =====================================================================
@@ -261,7 +341,7 @@ run_remote_setup() {
         echo ""
         echo "  To retry setup on this same server instead of creating a new one, run:"
         echo ""
-        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh"
+        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.4/setup.sh"
         echo "    EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY bash dodo-vps-setup.sh"
         echo ""
         error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
@@ -318,12 +398,15 @@ run_wizard_local() {
 
         echo ""
         echo "  Your token is only used during this setup and is never saved to disk."
+        echo "  Paste is hidden for safety; nothing will appear while you type or paste."
         echo ""
         HETZNER_TOKEN=""
         while [ -z "$HETZNER_TOKEN" ]; do
             echo -en "  Paste your Hetzner API token: "
-            read -rs HETZNER_TOKEN
+            local raw_token
+            read -rs raw_token
             echo ""
+            HETZNER_TOKEN=$(printf '%s' "$raw_token" | normalize_hetzner_token)
             if [ -z "$HETZNER_TOKEN" ]; then
                 echo "  Token can't be empty."
             fi
@@ -331,15 +414,18 @@ run_wizard_local() {
 
         # Validate token
         echo -en "  Checking token with Hetzner... "
-        local test_response
-        test_response=$(hetzner_api GET /servers 2>/dev/null || true)
-        if echo "$test_response" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'servers' in d" 2>/dev/null; then
+        if validate_hetzner_token; then
             echo -e "${GREEN}valid!${NC}"
+            echo "  Token accepted ($(printf '%s' "$HETZNER_TOKEN" | token_fingerprint))."
             token_valid=true
         else
             echo -e "${RED}invalid${NC}"
             echo ""
-            echo "  That token didn't work. Let's try again."
+            echo "  That token didn't work:"
+            echo "$HETZNER_LAST_ERROR" | sed 's/^/  /'
+            echo ""
+            echo "  Let's try again. If this keeps failing, generate a fresh Read & Write token"
+            echo "  inside the exact Hetzner Cloud project you want this VPS created in."
             echo ""
         fi
     done
@@ -653,6 +739,15 @@ local_main() {
     else
         # Headless mode — need HETZNER_TOKEN set
         [ -z "$HETZNER_TOKEN" ] && error "HETZNER_TOKEN required for non-interactive mode"
+        HETZNER_TOKEN=$(printf '%s' "$HETZNER_TOKEN" | normalize_hetzner_token)
+        echo -en "  Checking Hetzner token... "
+        if validate_hetzner_token; then
+            echo -e "${GREEN}valid${NC}"
+        else
+            echo -e "${RED}invalid${NC}"
+            echo "$HETZNER_LAST_ERROR" | sed 's/^/  /'
+            error "HETZNER_TOKEN was rejected"
+        fi
     fi
 
     setup_ssh_key
@@ -1494,7 +1589,7 @@ parse_args() {
                 echo "dodo-vps — One command to launch a coding-agent-ready VPS"
                 echo ""
                 echo "Usage:"
-                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.3/setup.sh"
+                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.4/setup.sh"
                 echo "  bash dodo-vps-setup.sh"
                 echo "                                      Run the wizard (from your laptop)"
                 echo "  sudo ./setup.sh --on-server                Run server setup directly on a VPS"
