@@ -4,7 +4,7 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh
+#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh
 #   bash dodo-vps-setup.sh
 #
 # The script handles everything:
@@ -28,7 +28,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.1.2"
+DODO_VPS_VERSION="v1.1.3"
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -147,6 +147,28 @@ token_fingerprint() {
     printf 'length=%s, sha256=%s' "${#raw}" "$hash"
 }
 
+json_number_value() {
+    local key="$1"
+    sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p" | head -n 1
+}
+
+json_string_value() {
+    local key="$1"
+    sed -n "s/.*\"$key\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1
+}
+
+find_ssh_key_id_by_fingerprint() {
+    local fingerprint="$1"
+    tr '{' '\n' | while IFS= read -r object || [ -n "$object" ]; do
+        case "$object" in
+            *"fingerprint"*"${fingerprint}"*)
+                printf '%s\n' "$object" | json_number_value id
+                break
+                ;;
+        esac
+    done
+}
+
 hetzner_api() {
     local method="$1" endpoint="$2" data="${3:-}"
     local args=(-s -H "Authorization: Bearer $HETZNER_TOKEN" -H "Content-Type: application/json")
@@ -241,19 +263,13 @@ create_hetzner_server() {
     key_response=$(hetzner_api POST /ssh_keys "{\"name\":\"$key_name\",\"public_key\":\"$pubkey\"}")
 
     local ssh_key_id
-    ssh_key_id=$(echo "$key_response" | python3 -c "import sys,json; print(json.load(sys.stdin)['ssh_key']['id'])" 2>/dev/null || true)
+    ssh_key_id=$(printf '%s\n' "$key_response" | json_number_value id || true)
 
     if [ -z "$ssh_key_id" ] || [ "$ssh_key_id" = "None" ]; then
         # Key might already exist — try to find it by fingerprint
         local fingerprint
         fingerprint=$(ssh-keygen -lf "${DODO_SSH_KEY}.pub" -E md5 | awk '{print $2}' | sed 's/MD5://')
-        ssh_key_id=$(hetzner_api GET "/ssh_keys" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for k in data.get('ssh_keys', []):
-    if k.get('fingerprint') == '$fingerprint':
-        print(k['id']); break
-" 2>/dev/null || true)
+        ssh_key_id=$(hetzner_api GET "/ssh_keys" | find_ssh_key_id_by_fingerprint "$fingerprint" || true)
         if [ -z "$ssh_key_id" ]; then
             echo "$key_response" >&2
             error "Failed to upload SSH key to Hetzner. Check your API token."
@@ -280,7 +296,7 @@ for k in data.get('ssh_keys', []):
         \"start_after_create\": true
     }")
 
-    SERVER_IP=$(echo "$server_response" | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['public_net']['ipv4']['ip'])" 2>/dev/null || true)
+    SERVER_IP=$(printf '%s\n' "$server_response" | json_string_value ip || true)
 
     if [ -z "$SERVER_IP" ] || [ "$SERVER_IP" = "None" ]; then
         echo "$server_response" >&2
@@ -335,7 +351,7 @@ run_remote_setup() {
         echo ""
         echo "  To retry setup on this same server instead of creating a new one, run:"
         echo ""
-        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh"
+        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh"
         echo "    EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY bash dodo-vps-setup.sh"
         echo ""
         error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
@@ -719,7 +735,7 @@ print_completion() {
 
 local_main() {
     # Check dependencies
-    for cmd in curl ssh ssh-keygen python3; do
+    for cmd in curl ssh ssh-keygen; do
         command -v "$cmd" &>/dev/null || error "Missing required tool: $cmd"
     done
 
@@ -1583,7 +1599,7 @@ parse_args() {
                 echo "dodo-vps — One command to launch a coding-agent-ready VPS"
                 echo ""
                 echo "Usage:"
-                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh"
+                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh"
                 echo "  bash dodo-vps-setup.sh"
                 echo "                                      Run the wizard (from your laptop)"
                 echo "  sudo ./setup.sh --on-server                Run server setup directly on a VPS"
