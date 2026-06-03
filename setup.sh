@@ -4,7 +4,7 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.1/setup.sh
+#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh
 #   bash dodo-vps-setup.sh
 #
 # The script handles everything:
@@ -28,7 +28,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.1.1"
+DODO_VPS_VERSION="v1.1.2"
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -241,7 +241,7 @@ create_hetzner_server() {
     key_response=$(hetzner_api POST /ssh_keys "{\"name\":\"$key_name\",\"public_key\":\"$pubkey\"}")
 
     local ssh_key_id
-    ssh_key_id=$(echo "$key_response" | python3 -c "import sys,json; print(json.load(sys.stdin)['ssh_key']['id'])" 2>/dev/null)
+    ssh_key_id=$(echo "$key_response" | python3 -c "import sys,json; print(json.load(sys.stdin)['ssh_key']['id'])" 2>/dev/null || true)
 
     if [ -z "$ssh_key_id" ] || [ "$ssh_key_id" = "None" ]; then
         # Key might already exist — try to find it by fingerprint
@@ -253,7 +253,7 @@ data = json.load(sys.stdin)
 for k in data.get('ssh_keys', []):
     if k.get('fingerprint') == '$fingerprint':
         print(k['id']); break
-" 2>/dev/null)
+" 2>/dev/null || true)
         if [ -z "$ssh_key_id" ]; then
             echo "$key_response" >&2
             error "Failed to upload SSH key to Hetzner. Check your API token."
@@ -280,7 +280,7 @@ for k in data.get('ssh_keys', []):
         \"start_after_create\": true
     }")
 
-    SERVER_IP=$(echo "$server_response" | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['public_net']['ipv4']['ip'])" 2>/dev/null)
+    SERVER_IP=$(echo "$server_response" | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['public_net']['ipv4']['ip'])" 2>/dev/null || true)
 
     if [ -z "$SERVER_IP" ] || [ "$SERVER_IP" = "None" ]; then
         echo "$server_response" >&2
@@ -335,7 +335,7 @@ run_remote_setup() {
         echo ""
         echo "  To retry setup on this same server instead of creating a new one, run:"
         echo ""
-        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.1/setup.sh"
+        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh"
         echo "    EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY bash dodo-vps-setup.sh"
         echo ""
         error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
@@ -1583,7 +1583,7 @@ parse_args() {
                 echo "dodo-vps — One command to launch a coding-agent-ready VPS"
                 echo ""
                 echo "Usage:"
-                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.1/setup.sh"
+                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh"
                 echo "  bash dodo-vps-setup.sh"
                 echo "                                      Run the wizard (from your laptop)"
                 echo "  sudo ./setup.sh --on-server                Run server setup directly on a VPS"

@@ -37,7 +37,7 @@ You don't need these during setup — the agents are installed either way. But y
 Run from your laptop:
 
 ```bash
-curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.1/setup.sh
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh
 bash dodo-vps-setup.sh
 ```
 
@@ -133,7 +133,7 @@ NEW_USER=ubuntu \
 If you have not downloaded the script yet:
 
 ```bash
-curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.1/setup.sh
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh
 ```
 
 All flags:
@@ -159,7 +159,7 @@ All flags:
 If server creation succeeded but setup failed, rerun setup against the same server instead of creating a new one:
 
 ```bash
-curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.1/setup.sh
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.2/setup.sh
 EXISTING_SERVER_IP=<server-ip> SSH_KEY_PATH=~/.ssh/dodo-vps_ed25519 bash dodo-vps-setup.sh
 ```
 
