@@ -4,7 +4,7 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.4/setup.sh
+#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.5/setup.sh
 #   bash dodo-vps-setup.sh
 #
 # The script handles everything:
@@ -28,7 +28,7 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.0.4"
+DODO_VPS_VERSION="v1.0.5"
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -114,35 +114,37 @@ ask_yes_no() {
 normalize_hetzner_token() {
     local raw
     raw=$(cat)
-    HETZNER_TOKEN_INPUT="$raw" python3 <<'PY'
-import re, sys
-import os
+    raw=${raw//$'\r'/}
+    raw=${raw//$'\n'/}
 
-s = os.environ.get("HETZNER_TOKEN_INPUT", "")
-s = s.replace("\r", "").replace("\n", "").strip()
+    # Trim surrounding whitespace.
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
 
-# Accept common accidental pastes:
-#   export HETZNER_TOKEN=...
-#   HETZNER_TOKEN="..."
-m = re.search(r"(?:export\s+)?HETZNER_TOKEN\s*=\s*([^\s]+)", s)
-if m:
-    s = m.group(1)
+    # Accept common accidental pastes:
+    #   export HETZNER_TOKEN=...
+    #   HETZNER_TOKEN="..."
+    raw="${raw#export }"
+    raw="${raw#HETZNER_TOKEN=}"
 
-s = s.strip().strip("\"").strip("'").strip()
-print(s, end="")
-PY
+    raw="${raw%\"}"
+    raw="${raw#\"}"
+    raw="${raw%\'}"
+    raw="${raw#\'}"
+
+    printf '%s' "$raw"
 }
 
 token_fingerprint() {
     local raw
     raw=$(cat)
-    HETZNER_TOKEN_INPUT="$raw" python3 <<'PY'
-import hashlib, sys
-import os
-
-s = os.environ.get("HETZNER_TOKEN_INPUT", "")
-print(f"length={len(s)}, sha256={hashlib.sha256(s.encode()).hexdigest()[:8]}")
-PY
+    local hash
+    if command -v shasum >/dev/null 2>&1; then
+        hash=$(printf '%s' "$raw" | shasum -a 256 | awk '{print substr($1,1,8)}')
+    else
+        hash="unknown"
+    fi
+    printf 'length=%s, sha256=%s' "${#raw}" "$hash"
 }
 
 hetzner_api() {
@@ -167,34 +169,26 @@ validate_hetzner_token() {
     http_status=$(printf '%s\n' "$response" | tail -n 1)
     body=$(printf '%s\n' "$response" | sed '$d')
 
-    if [ "$http_status" = "200" ] && printf '%s' "$body" | python3 -c "import sys,json; d=json.load(sys.stdin); assert 'servers' in d" 2>/dev/null; then
+    if [ "$http_status" = "200" ]; then
         return 0
     fi
 
-    HETZNER_LAST_ERROR=$(HETZNER_ERROR_BODY="$body" python3 - "$http_status" <<'PY'
-import json, os, sys
+    local message hint
+    message=$(printf '%s' "$body" | sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    [ -z "$message" ] && message=$(printf '%s' "$body" | sed -n 's/.*"code"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+    [ -z "$message" ] && message="<no response body from Hetzner>"
 
-status = sys.argv[1]
-body = os.environ.get("HETZNER_ERROR_BODY", "")
-message = body.strip()
-try:
-    data = json.loads(body)
-    err = data.get("error", {})
-    if isinstance(err, dict):
-        message = err.get("message") or err.get("code") or message
-except Exception:
-    pass
+    if [ "$http_status" = "401" ]; then
+        hint="Make sure this is a Hetzner Cloud project API token, not a Robot/console password, and that it was copied completely."
+    elif [ "$http_status" = "403" ]; then
+        hint="Make sure the token has Read & Write permissions for this Hetzner Cloud project."
+    else
+        hint="Open Hetzner Cloud Console > Project > Security > API Tokens and generate a new Read & Write token."
+    fi
 
-if status == "401":
-    hint = "Make sure this is a Hetzner Cloud project API token, not a Robot/console password, and that it was copied completely."
-elif status == "403":
-    hint = "Make sure the token has Read & Write permissions for this Hetzner Cloud project."
-else:
-    hint = "Open Hetzner Cloud Console > Project > Security > API Tokens and generate a new Read & Write token."
-
-print(f"HTTP {status}: {message}\n  {hint}")
-PY
-)
+    HETZNER_LAST_ERROR="HTTP ${http_status:-unknown}: $message
+  $hint
+  Token entered: $(printf '%s' "$HETZNER_TOKEN" | token_fingerprint)"
     return 1
 }
 
@@ -341,7 +335,7 @@ run_remote_setup() {
         echo ""
         echo "  To retry setup on this same server instead of creating a new one, run:"
         echo ""
-        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.4/setup.sh"
+        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.5/setup.sh"
         echo "    EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY bash dodo-vps-setup.sh"
         echo ""
         error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
@@ -1589,7 +1583,7 @@ parse_args() {
                 echo "dodo-vps — One command to launch a coding-agent-ready VPS"
                 echo ""
                 echo "Usage:"
-                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.4/setup.sh"
+                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.0.5/setup.sh"
                 echo "  bash dodo-vps-setup.sh"
                 echo "                                      Run the wizard (from your laptop)"
                 echo "  sudo ./setup.sh --on-server                Run server setup directly on a VPS"
