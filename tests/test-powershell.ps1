@@ -79,7 +79,7 @@ function global:ssh {
     }
 }
 
-function global:Invoke-SshProbe {
+function Invoke-SshProbe {
     param([string[]]$Options, [string]$Target)
     [void]$script:SshCalls.Add(@($Options) + @($Target, 'echo ok'))
     $exitCode = if ($Target -match '^root@') { 255 } else { 0 }
@@ -166,7 +166,7 @@ if ($hungStopwatch.Elapsed.TotalSeconds -gt 5) {
 
 $script:SshCalls.Clear()
 $script:IsResume = $true
-function global:Invoke-SshProbe {
+function Invoke-SshProbe {
     param([string[]]$Options, [string]$Target)
     [void]$script:SshCalls.Add(@($Options) + @($Target, 'echo ok'))
     [pscustomobject]@{ ExitCode = 255; TimedOut = $false; StandardError = 'Connection refused' }
