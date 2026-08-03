@@ -39,8 +39,18 @@ $script:ServerName = 'native-test'
 $configDirectory = Join-Path $nativeTestRoot 'config-home'
 $shortcut = Set-SshShortcut $configDirectory
 $configPath = Join-Path $configDirectory 'config'
-$configOutput = & ssh -F $configPath -G $shortcut 2>&1 | Out-String
-if ($LASTEXITCODE -ne 0) {
+$previousPreference = $ErrorActionPreference
+try {
+    # Windows PowerShell 5.1 promotes harmless native stderr to a terminating
+    # NativeCommandError when the global preference is Stop.
+    $ErrorActionPreference = 'Continue'
+    $configOutput = & ssh -F $configPath -G $shortcut 2>$null | Out-String
+    $configExitCode = $LASTEXITCODE
+}
+finally {
+    $ErrorActionPreference = $previousPreference
+}
+if ($configExitCode -ne 0) {
     throw "Generated SSH config failed to parse: $configOutput"
 }
 if ($configOutput -notmatch [regex]::Escape(($SshKeyPath -replace '\\', '/'))) {
@@ -154,5 +164,7 @@ if ($timeoutOutput -notmatch 'did not become reachable after five minutes') {
 
 Remove-Item Function:\ssh
 Remove-Item Function:\Start-Sleep
+Remove-Item -Recurse -Force $nativeTestRoot
 
 Write-Host 'PowerShell compatibility checks passed.'
+exit 0

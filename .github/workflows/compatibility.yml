@@ -11,7 +11,7 @@ jobs:
         os: [ubuntu-22.04, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check Bash syntax
         run: bash -n setup.sh tests/test-setup.sh
       - name: Run Bash compatibility tests
@@ -19,12 +19,13 @@ jobs:
 
   windows:
     strategy:
+      fail-fast: false
       matrix:
         os: [windows-2022, windows-2025]
         shell: [powershell, pwsh]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Parse and run Windows preflight (Windows PowerShell 5.1)
         if: matrix.shell == 'powershell'
         shell: powershell
