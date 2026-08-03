@@ -33,7 +33,7 @@ One command to launch a coding-agent-ready VPS.
 Run from Windows PowerShell 5.1 or PowerShell 7. WSL and Git Bash are not required.
 
 ```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1
 powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1
 ```
 
@@ -47,7 +47,7 @@ Tell the agent: "This computer is running Windows. Open PowerShell and run the
 command below. Use `setup.ps1`, not `setup.sh`, and walk me through the prompts."
 
 ```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1; powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1; powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1
 ```
 
 That single command downloads the current Windows launcher and starts the setup
@@ -184,7 +184,7 @@ root login has already been disabled without needlessly triggering fail2ban.
 Windows:
 
 ```powershell
-Invoke-WebRequest https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1
+Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1
 powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1 `
   -ExistingServerIp <server-ip> `
   -SshKeyPath "$HOME\.ssh\dodo-vps_ed25519"

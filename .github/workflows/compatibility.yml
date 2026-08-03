@@ -26,6 +26,20 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      - name: Download Windows launcher (Windows PowerShell 5.1)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: |
+          $launcher = Join-Path $env:RUNNER_TEMP 'dodo-vps-setup.ps1'
+          Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/setup.ps1" -OutFile $launcher
+          powershell -ExecutionPolicy Bypass -File $launcher -Check
+      - name: Download Windows launcher (PowerShell 7)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
+        run: |
+          $launcher = Join-Path $env:RUNNER_TEMP 'dodo-vps-setup.ps1'
+          Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/setup.ps1" -OutFile $launcher
+          pwsh -File $launcher -Check
       - name: Parse and run Windows preflight (Windows PowerShell 5.1)
         if: matrix.shell == 'powershell'
         shell: powershell

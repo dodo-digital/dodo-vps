@@ -117,7 +117,7 @@ $failureOutput = & {
         $_.Exception.Message
     }
 } *>&1 | Out-String
-if ($failureOutput -notmatch 'Invoke-WebRequest .*main/setup\.ps1') {
+if ($failureOutput -notmatch 'Invoke-WebRequest -UseBasicParsing .*main/setup\.ps1') {
     throw 'Failed remote setup did not print the fresh-launcher download command.'
 }
 if ($failureOutput -notmatch "ExistingServerIp '203\.0\.113\.20'") {

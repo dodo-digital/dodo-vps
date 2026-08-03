@@ -365,7 +365,7 @@ function Invoke-RemoteSetup {
 function Write-RetryInstructions {
     Write-Host ''
     Write-Host 'Retry this same server after a fix is pushed:' -ForegroundColor Yellow
-    Write-Host '  Invoke-WebRequest https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1'
+    Write-Host '  Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1'
     Write-Host ("  powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1 -ExistingServerIp '{0}' -SshKeyPath '{1}' -UserName '{2}' -InstallDocker '{3}' -InstallClaudeCode '{4}' -InstallCodex '{5}' -InstallGeminiCli '{6}' -InstallOpenCode '{7}' -InstallBun '{8}' -InstallTailscale '{9}'" -f $ExistingServerIp, $SshKeyPath, $UserName, $InstallDocker, $InstallClaudeCode, $InstallCodex, $InstallGeminiCli, $InstallOpenCode, $InstallBun, $InstallTailscale)
 }
 
