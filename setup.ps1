@@ -101,6 +101,55 @@ function Invoke-NativeQuiet([scriptblock]$Action) {
     }
 }
 
+function Format-NativeArgument([string]$Value) {
+    if ($Value.Contains('"')) {
+        Stop-Setup 'Native process arguments cannot contain a double quote.'
+    }
+    if ($Value.Length -eq 0) { return '""' }
+    if ($Value -notmatch '\s') { return $Value }
+    return '"{0}"' -f $Value
+}
+
+function Invoke-NativeProcessWithTimeout(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [int]$TimeoutSeconds
+) {
+    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $processInfo.FileName = $FilePath
+    $processInfo.Arguments = (($Arguments | ForEach-Object { Format-NativeArgument $_ }) -join ' ')
+    $processInfo.UseShellExecute = $false
+    $processInfo.CreateNoWindow = $true
+    $processInfo.RedirectStandardOutput = $true
+    $processInfo.RedirectStandardError = $true
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $processInfo
+    try {
+        if (-not $process.Start()) {
+            Stop-Setup "Could not start native process: $FilePath"
+        }
+        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+            try { $process.Kill() } catch { }
+            $process.WaitForExit()
+            return [pscustomobject]@{
+                ExitCode = 124
+                TimedOut = $true
+                StandardError = "Process exceeded the $TimeoutSeconds-second timeout."
+            }
+        }
+
+        return [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            TimedOut = $false
+            StandardError = $process.StandardError.ReadToEnd().Trim()
+        }
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
 function Read-Secret([string]$Prompt) {
     $secure = Read-Host $Prompt -AsSecureString
     $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
@@ -300,24 +349,35 @@ function Get-SshOptions {
     )
 }
 
+function Invoke-SshProbe([string[]]$Options, [string]$Target) {
+    $sshExecutable = (Get-Command ssh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+    Invoke-NativeProcessWithTimeout $sshExecutable (@($Options) + @($Target, 'echo ok')) 10
+}
+
 function Wait-ForServer {
     Write-Step 'Waiting for server'
     $options = Get-SshOptions
     $candidates = if ($IsResume) { @($UserName, 'root') } else { @('root') }
     $stopwatch = [Diagnostics.Stopwatch]::StartNew()
+    $lastSshError = ''
     for ($attempt = 1; $attempt -le 60 -and $stopwatch.Elapsed.TotalMinutes -lt 5; $attempt++) {
         foreach ($candidate in $candidates) {
-            $exitCode = Invoke-NativeQuiet { & ssh @options "$candidate@$ExistingServerIp" 'echo ok' }
-            if ($exitCode -eq 0) {
+            $probe = Invoke-SshProbe $options "$candidate@$ExistingServerIp"
+            if ($probe.ExitCode -eq 0) {
                 $script:RemoteUser = $candidate
                 Write-Info "Server is ready (connecting as $RemoteUser)."
                 return
             }
+            $lastSshError = $probe.StandardError
         }
         Write-Host ("`rWaiting... {0}/60" -f $attempt) -NoNewline
         Start-Sleep -Seconds 5
     }
-    Stop-Setup 'Server did not become reachable after five minutes. Check the Hetzner console.'
+    $message = 'Server did not become reachable after five minutes. Check the Hetzner console.'
+    if (-not [string]::IsNullOrWhiteSpace($lastSshError)) {
+        $message += " Last SSH error: $lastSshError"
+    }
+    Stop-Setup $message
 }
 
 function Invoke-RemoteSetup {

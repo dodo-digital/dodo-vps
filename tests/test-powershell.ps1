@@ -79,6 +79,13 @@ function global:ssh {
     }
 }
 
+function global:Invoke-SshProbe {
+    param([string[]]$Options, [string]$Target)
+    [void]$script:SshCalls.Add(@($Options) + @($Target, 'echo ok'))
+    $exitCode = if ($Target -match '^root@') { 255 } else { 0 }
+    [pscustomobject]@{ ExitCode = $exitCode; TimedOut = $false; StandardError = '' }
+}
+
 Wait-ForServer
 if ($RemoteUser -ne 'ubuntu') {
     throw "Resume selected '$RemoteUser' instead of the hardened service user."
@@ -140,11 +147,29 @@ if ('IdentitiesOnly=yes' -notin $sshOptions) {
     throw 'SSH may offer unrelated agent keys and trigger MaxAuthTries/fail2ban.'
 }
 
+# A single native SSH process must not be able to freeze the outer readiness
+# loop. Exercise the process boundary with a real child that never finishes on
+# its own, rather than another instant-returning ssh mock.
+$currentPowerShell = (Get-Process -Id $PID).Path
+$hungStopwatch = [Diagnostics.Stopwatch]::StartNew()
+$hungResult = Invoke-NativeProcessWithTimeout `
+    $currentPowerShell `
+    @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') `
+    1
+$hungStopwatch.Stop()
+if (-not $hungResult.TimedOut) {
+    throw 'Hung native process was not terminated at its hard timeout.'
+}
+if ($hungStopwatch.Elapsed.TotalSeconds -gt 5) {
+    throw "Hung native process took $($hungStopwatch.Elapsed.TotalSeconds) seconds to terminate."
+}
+
 $script:SshCalls.Clear()
 $script:IsResume = $true
-function global:ssh {
-    [void]$script:SshCalls.Add(@($args))
-    $global:LASTEXITCODE = 255
+function global:Invoke-SshProbe {
+    param([string[]]$Options, [string]$Target)
+    [void]$script:SshCalls.Add(@($Options) + @($Target, 'echo ok'))
+    [pscustomobject]@{ ExitCode = 255; TimedOut = $false; StandardError = 'Connection refused' }
 }
 function global:Start-Sleep { }
 $timeoutOutput = & {
@@ -161,8 +186,12 @@ if ($SshCalls.Count -ne 120) {
 if ($timeoutOutput -notmatch 'did not become reachable after five minutes') {
     throw 'Readiness timeout did not return the bounded five-minute error.'
 }
+if ($timeoutOutput -notmatch 'Last SSH error: Connection refused') {
+    throw 'Readiness failure hid the final SSH diagnostic.'
+}
 
 Remove-Item Function:\ssh
+Remove-Item Function:\Invoke-SshProbe
 Remove-Item Function:\Start-Sleep
 Remove-Item -Recurse -Force $nativeTestRoot
 
