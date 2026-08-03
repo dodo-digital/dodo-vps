@@ -2,11 +2,9 @@
 
 One command to launch a coding-agent-ready VPS.
 
-Creates a hardened Hetzner server with Claude Code, Codex, Gemini CLI, and OpenCode pre-installed.
+This script creates a hardened Hetzner server with Claude Code, Codex, Gemini CLI, and OpenCode pre-installed.
 
 ## Before You Start
-
-You need two things. The wizard walks you through both.
 
 ### 1. Hetzner Cloud Account (required)
 
@@ -17,9 +15,7 @@ You need two things. The wizard walks you through both.
 3. Go to **Security > API Tokens > Generate API Token**
 4. Select **Read & Write** access and copy the token
 
-### 2. API Keys for Your Coding Agents (after setup)
-
-You don't need these during setup — the agents are installed either way. But you'll need at least one to start coding.
+### 2. Oauth / API Keys for Your Coding Agents (after setup)
 
 | Agent | Where to get the key | Env variable |
 |-------|---------------------|--------------|
@@ -30,7 +26,7 @@ You don't need these during setup — the agents are installed either way. But y
 
 ### Optional
 
-- **Tailscale account** — if you want private VPN access to your server. Free at [tailscale.com](https://tailscale.com). The setup wizard will ask.
+- **Tailscale account** — if you want private VPN access to your server. Free at [tailscale.com](https://tailscale.com).
 
 ## Quick Start
 
@@ -41,7 +37,7 @@ curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dod
 bash dodo-vps-setup.sh
 ```
 
-The wizard walks you through everything: server size, location, which agents to install. Takes about 10 minutes.
+The wizard will walk you through server size, location, and preferences. The full install takes ~10 minutes.
 
 ### Already have a VPS?
 
@@ -53,7 +49,7 @@ chmod +x setup.sh
 sudo ./setup.sh --on-server
 ```
 
-## What Gets Installed
+## Dodo VPS Installs
 
 ### Coding Agents (all optional, all default to yes)
 
