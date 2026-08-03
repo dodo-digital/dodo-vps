@@ -25,6 +25,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Parse and run Windows preflight
-        shell: ${{ matrix.shell }}
+      - name: Parse and run Windows preflight (Windows PowerShell 5.1)
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: .\tests\test-powershell.ps1
+      - name: Parse and run Windows preflight (PowerShell 7)
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
         run: .\tests\test-powershell.ps1
