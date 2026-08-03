@@ -4,7 +4,7 @@
 # https://github.com/dodo-digital/dodo-vps
 #
 # Run from your laptop:
-#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh
+#   curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh
 #   bash dodo-vps-setup.sh
 #
 # The script handles everything:
@@ -28,7 +28,13 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 # ─── Version ─────────────────────────────────────────────────────────
-DODO_VPS_VERSION="v1.1.3"
+DODO_VPS_VERSION="${DODO_VPS_VERSION:-main}"
+case "$DODO_VPS_VERSION" in
+    ""|/*|*/|*..*|*//*|*[!A-Za-z0-9._/-]*)
+        echo "Invalid DODO_VPS_VERSION: use a Git branch, tag, or commit without path traversal." >&2
+        exit 1
+        ;;
+esac
 DODO_VPS_RAW="https://raw.githubusercontent.com/dodo-digital/dodo-vps/${DODO_VPS_VERSION}"
 
 # ─── Configuration ────────────────────────────────────────────────────
@@ -52,6 +58,9 @@ INSTALL_TAILSCALE="${INSTALL_TAILSCALE:-false}"
 # Set during execution
 SERVER_IP="$EXISTING_SERVER_IP"
 TAILSCALE_IP=""
+REMOTE_USER="root"
+IS_RESUME=false
+[ -n "$EXISTING_SERVER_IP" ] && IS_RESUME=true
 DODO_SSH_KEY="$HOME/.ssh/dodo-vps_ed25519"
 
 SETUP_LOG="/var/log/dodo-vps-setup.log"
@@ -171,7 +180,7 @@ find_ssh_key_id_by_fingerprint() {
 
 hetzner_api() {
     local method="$1" endpoint="$2" data="${3:-}"
-    local args=(-s -H "Authorization: Bearer $HETZNER_TOKEN" -H "Content-Type: application/json")
+    local args=(-sS --connect-timeout 10 --max-time 60 -H "Authorization: Bearer $HETZNER_TOKEN" -H "Content-Type: application/json")
     [ -n "$data" ] && args+=(-d "$data")
     curl "${args[@]}" -X "$method" "https://api.hetzner.cloud/v1${endpoint}"
 }
@@ -180,7 +189,7 @@ HETZNER_LAST_ERROR=""
 validate_hetzner_token() {
     local response http_status body
 
-    response=$(curl -sS -w '\n%{http_code}' \
+    response=$(curl -sS --connect-timeout 10 --max-time 60 -w '\n%{http_code}' \
         -H "Authorization: Bearer $HETZNER_TOKEN" \
         -H "Content-Type: application/json" \
         -X GET "https://api.hetzner.cloud/v1/servers" 2>&1) || {
@@ -220,6 +229,9 @@ validate_hetzner_token() {
 
 setup_ssh_key() {
     step "SSH Key"
+
+    mkdir -p "$HOME/.ssh"
+    chmod 700 "$HOME/.ssh"
 
     # Explicit key path takes priority
     if [ -n "$SSH_KEY_PATH" ] && [ -f "$SSH_KEY_PATH" ]; then
@@ -304,6 +316,10 @@ create_hetzner_server() {
     fi
 
     log "Server created! IP: $SERVER_IP"
+
+    # Hetzner may reassign an IP that previously belonged to another server.
+    # This is safe only on the new-server path; resumes must reject key changes.
+    ssh-keygen -R "$SERVER_IP" >/dev/null 2>&1 || true
 }
 
 wait_for_server() {
@@ -312,12 +328,25 @@ wait_for_server() {
     log "Waiting for $SERVER_IP to accept SSH connections..."
     local attempts=0
     local max_attempts=60  # 5 minutes
+    local deadline=$((SECONDS + 300))
+    local candidates=(root)
+    if [ "$IS_RESUME" = true ]; then
+        # The service user is the expected path after hardening. Trying root
+        # first can trip the fail2ban policy this installer configures.
+        candidates=("$NEW_USER" root)
+    fi
 
-    while [ $attempts -lt $max_attempts ]; do
-        if ssh -i "$DODO_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes root@"$SERVER_IP" "echo ok" &>/dev/null; then
-            log "Server is ready!"
-            return
-        fi
+    while [ $attempts -lt $max_attempts ] && [ $SECONDS -lt $deadline ]; do
+        # Fresh Hetzner servers accept root. A partially configured server may
+        # already have root login disabled, so resume through the service user.
+        local candidate
+        for candidate in "${candidates[@]}"; do
+            if ssh -i "$DODO_SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 -o BatchMode=yes "$candidate@$SERVER_IP" "echo ok" &>/dev/null; then
+                REMOTE_USER="$candidate"
+                log "Server is ready (connecting as $REMOTE_USER)!"
+                return
+            fi
+        done
         attempts=$((attempts + 1))
         echo -en "\r  Waiting... ${attempts}/${max_attempts} ($(( attempts * 5 ))s)"
         sleep 5
@@ -333,29 +362,49 @@ run_remote_setup() {
     echo ""
 
     local script_url="${DODO_VPS_RAW}/setup.sh"
-    local ssh_opts="-i $DODO_SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+    local ssh_opts=(-i "$DODO_SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR)
+    local privilege_prefix=""
+    if [ "$REMOTE_USER" != "root" ]; then
+        privilege_prefix="sudo"
+        if ! ssh "${ssh_opts[@]}" "$REMOTE_USER@$SERVER_IP" "sudo -n true"; then
+            error "The service user cannot run passwordless sudo. Use the Hetzner console to restore sudo access, then retry this same server."
+        fi
+    fi
 
-    # Download script to server first (keeps stdin free for interactive prompts)
-    ssh $ssh_opts root@"$SERVER_IP" \
-        "curl -fsSL $script_url -o /tmp/dodo-vps-setup.sh && chmod +x /tmp/dodo-vps-setup.sh"
+    # Download script to server first (keeps stdin free for interactive prompts).
+    # This is a safe GET, so a small retry budget avoids failing on a brief CDN
+    # interruption without ever retrying server creation.
+    if ! ssh "${ssh_opts[@]}" "$REMOTE_USER@$SERVER_IP" \
+        "$privilege_prefix curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 --retry-delay 2 $script_url -o /tmp/dodo-vps-setup.sh && $privilege_prefix chmod +x /tmp/dodo-vps-setup.sh"; then
+        echo ""
+        warn "Could not download the server setup script."
+        print_resume_instructions
+        error "The VPS is still reachable at $REMOTE_USER@$SERVER_IP; no new server is needed."
+    fi
 
     # Run with -t for pseudo-terminal so interactive prompts work.
     # If setup fails, fetch the server log while root SSH still works so the
     # person running the installer is not forced into the cloud console.
-    if ! ssh -t $ssh_opts root@"$SERVER_IP" \
-        "NEW_USER=$NEW_USER INSTALL_DOCKER=$INSTALL_DOCKER INSTALL_CLAUDE_CODE=$INSTALL_CLAUDE_CODE INSTALL_CODEX=$INSTALL_CODEX INSTALL_GEMINI_CLI=$INSTALL_GEMINI_CLI INSTALL_OPENCODE=$INSTALL_OPENCODE INSTALL_BUN=$INSTALL_BUN INSTALL_TAILSCALE=$INSTALL_TAILSCALE bash /tmp/dodo-vps-setup.sh --on-server"; then
+    if ! ssh -t "${ssh_opts[@]}" "$REMOTE_USER@$SERVER_IP" \
+        "$privilege_prefix env NEW_USER=$NEW_USER INSTALL_DOCKER=$INSTALL_DOCKER INSTALL_CLAUDE_CODE=$INSTALL_CLAUDE_CODE INSTALL_CODEX=$INSTALL_CODEX INSTALL_GEMINI_CLI=$INSTALL_GEMINI_CLI INSTALL_OPENCODE=$INSTALL_OPENCODE INSTALL_BUN=$INSTALL_BUN INSTALL_TAILSCALE=$INSTALL_TAILSCALE bash /tmp/dodo-vps-setup.sh --on-server"; then
         echo ""
         warn "Server setup failed. Fetching the last lines of the setup log..."
         echo ""
-        ssh $ssh_opts root@"$SERVER_IP" "tail -120 $SETUP_LOG 2>/dev/null || true" || true
-        echo ""
-        echo "  To retry setup on this same server instead of creating a new one, run:"
-        echo ""
-        echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh"
-        echo "    EXISTING_SERVER_IP=$SERVER_IP SSH_KEY_PATH=$DODO_SSH_KEY bash dodo-vps-setup.sh"
-        echo ""
-        error "Server setup failed. The server is still reachable at root@$SERVER_IP with $DODO_SSH_KEY."
+        ssh "${ssh_opts[@]}" "$REMOTE_USER@$SERVER_IP" "$privilege_prefix tail -120 $SETUP_LOG 2>/dev/null || true" || true
+        print_resume_instructions
+        error "Server setup failed. The server is still reachable at $REMOTE_USER@$SERVER_IP with $DODO_SSH_KEY."
     fi
+}
+
+print_resume_instructions() {
+    echo ""
+    echo "  To retry setup on this same server instead of creating a new one, run:"
+    echo ""
+    echo "    curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh"
+    printf '    NEW_USER=%q EXISTING_SERVER_IP=%q SSH_KEY_PATH=%q INSTALL_DOCKER=%q INSTALL_CLAUDE_CODE=%q INSTALL_CODEX=%q INSTALL_GEMINI_CLI=%q INSTALL_OPENCODE=%q INSTALL_BUN=%q INSTALL_TAILSCALE=%q bash dodo-vps-setup.sh\n' \
+        "$NEW_USER" "$SERVER_IP" "$DODO_SSH_KEY" "$INSTALL_DOCKER" "$INSTALL_CLAUDE_CODE" "$INSTALL_CODEX" \
+        "$INSTALL_GEMINI_CLI" "$INSTALL_OPENCODE" "$INSTALL_BUN" "$INSTALL_TAILSCALE"
+    echo ""
 }
 
 run_wizard_local() {
@@ -734,6 +783,12 @@ print_completion() {
 }
 
 local_main() {
+    case "$(uname -s 2>/dev/null || true)" in
+        MINGW*|MSYS*|CYGWIN*)
+            error "Use setup.ps1 from PowerShell on Windows. The Bash launcher is supported on macOS, Linux, and WSL."
+            ;;
+    esac
+
     # Check dependencies
     for cmd in curl ssh ssh-keygen; do
         command -v "$cmd" &>/dev/null || error "Missing required tool: $cmd"
@@ -769,7 +824,7 @@ local_main() {
 
     # Fetch Tailscale IP from server (if installed)
     if [ "$INSTALL_TAILSCALE" = true ]; then
-        TAILSCALE_IP=$(ssh -i "$DODO_SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR "$NEW_USER@$SERVER_IP" "sudo tailscale ip -4 2>/dev/null" 2>/dev/null || true)
+        TAILSCALE_IP=$(ssh -i "$DODO_SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR "$NEW_USER@$SERVER_IP" "sudo tailscale ip -4 2>/dev/null" 2>/dev/null || true)
     fi
 
     # Post-setup: local convenience (only in interactive mode)
@@ -806,9 +861,11 @@ create_user() {
     log "Creating user: $NEW_USER"
     if id "$NEW_USER" &>/dev/null; then
         warn "User $NEW_USER already exists"
-        return
+    else
+        useradd -m -s /bin/bash "$NEW_USER"
     fi
-    useradd -m -s /bin/bash "$NEW_USER"
+    # Keep this idempotent. Resume depends on the service user being able to
+    # finish setup after root login has been disabled.
     usermod -aG sudo "$NEW_USER"
     # Passwordless sudo — no password was set (SSH key auth only)
     echo "$NEW_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$NEW_USER"
@@ -1599,7 +1656,7 @@ parse_args() {
                 echo "dodo-vps — One command to launch a coding-agent-ready VPS"
                 echo ""
                 echo "Usage:"
-                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh"
+                echo "  curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh"
                 echo "  bash dodo-vps-setup.sh"
                 echo "                                      Run the wizard (from your laptop)"
                 echo "  sudo ./setup.sh --on-server                Run server setup directly on a VPS"
@@ -1625,11 +1682,13 @@ parse_args() {
     done
 }
 
-ON_SERVER=false
-parse_args "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    ON_SERVER=false
+    parse_args "$@"
 
-if [ "$ON_SERVER" = true ]; then
-    server_main
-else
-    local_main
+    if [ "$ON_SERVER" = true ]; then
+        server_main
+    else
+        local_main
+    fi
 fi

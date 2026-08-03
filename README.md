@@ -28,10 +28,23 @@ One command to launch a coding-agent-ready VPS.
 
 ## Quick Start
 
-Run from your laptop:
+### Windows 10 (build 1809+) and Windows 11
+
+Run from Windows PowerShell 5.1 or PowerShell 7. WSL and Git Bash are not required.
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1
+powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1
+```
+
+The Windows launcher checks for the built-in OpenSSH client before creating a
+server. If it is missing, install **OpenSSH Client** from **Settings > Optional
+Features** and rerun the command.
+
+### macOS, Linux, and WSL
 
 ```bash
-curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh
 bash dodo-vps-setup.sh
 ```
 
@@ -127,7 +140,7 @@ NEW_USER=ubuntu \
 If you have not downloaded the script yet:
 
 ```bash
-curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh
 ```
 
 All flags:
@@ -150,14 +163,30 @@ All flags:
 
 ## Resume a Failed Setup
 
-If server creation succeeded but setup failed, rerun setup against the same server instead of creating a new one:
+If server creation succeeded but setup failed, rerun setup against the same
+server instead of creating a new one. The launcher tries the hardened service
+account first, then the initial `root` account, so it can recover even after
+root login has already been disabled without needlessly triggering fail2ban.
+
+Windows:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1
+powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1 `
+  -ExistingServerIp <server-ip> `
+  -SshKeyPath "$HOME\.ssh\dodo-vps_ed25519"
+```
+
+macOS, Linux, or WSL:
 
 ```bash
-curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/v1.1.3/setup.sh
+curl -fsSLo dodo-vps-setup.sh https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.sh
 EXISTING_SERVER_IP=<server-ip> SSH_KEY_PATH=~/.ssh/dodo-vps_ed25519 bash dodo-vps-setup.sh
 ```
 
-The installer also prints this command automatically when the server-side setup fails.
+Both launchers print the exact retry command automatically when server-side
+setup fails. They download the current `main` installer on each run, so a
+hotfix can be pushed and retried against the same VPS without rebuilding it.
 
 ## Tailscale
 
@@ -197,8 +226,12 @@ export PATH="$HOME/.npm-global/bin:$PATH"
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 ```
 
-## Tested On
+## Compatibility
 
+- Supported client systems: Windows 10 build 1809+ and Windows 11 with
+  Windows PowerShell 5.1 or PowerShell 7
+- Windows CI matrix: Windows Server 2022 and 2025 with Windows PowerShell 5.1
+  and PowerShell 7
 - Ubuntu 22.04 LTS
 - Ubuntu 24.04 LTS
 - Hetzner Cloud (CPX series)
