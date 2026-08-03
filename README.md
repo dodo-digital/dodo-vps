@@ -41,6 +41,19 @@ The Windows launcher checks for the built-in OpenSSH client before creating a
 server. If it is missing, install **OpenSSH Client** from **Settings > Optional
 Features** and rerun the command.
 
+#### Giving this to an AI agent
+
+Tell the agent: "This computer is running Windows. Open PowerShell and run the
+command below. Use `setup.ps1`, not `setup.sh`, and walk me through the prompts."
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/dodo-digital/dodo-vps/main/setup.ps1 -OutFile dodo-vps-setup.ps1; powershell -ExecutionPolicy Bypass -File .\dodo-vps-setup.ps1
+```
+
+That single command downloads the current Windows launcher and starts the setup
+wizard. If setup stops after the VPS has been created, use the retry command it
+prints instead of creating another server.
+
 ### macOS, Linux, and WSL
 
 ```bash
