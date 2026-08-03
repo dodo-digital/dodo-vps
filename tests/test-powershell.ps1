@@ -147,11 +147,14 @@ if ('IdentitiesOnly=yes' -notin $sshOptions) {
     throw 'SSH may offer unrelated agent keys and trigger MaxAuthTries/fail2ban.'
 }
 
-# A single SSH job must not be able to freeze the outer readiness loop.
+# A single native SSH process must not be able to freeze the outer readiness
+# loop. The post-kill wait is bounded too, which is the Windows-specific
+# behavior this regression protects.
+$currentPowerShell = (Get-Process -Id $PID).Path
 $hungStopwatch = [Diagnostics.Stopwatch]::StartNew()
-$hungResult = Invoke-BackgroundJobWithTimeout `
-    { Start-Sleep -Seconds 30 } `
-    @() `
+$hungResult = Invoke-NativeProcessWithTimeout `
+    $currentPowerShell `
+    @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') `
     1
 $hungStopwatch.Stop()
 if (-not $hungResult.TimedOut) {
