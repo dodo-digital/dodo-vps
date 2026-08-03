@@ -147,14 +147,11 @@ if ('IdentitiesOnly=yes' -notin $sshOptions) {
     throw 'SSH may offer unrelated agent keys and trigger MaxAuthTries/fail2ban.'
 }
 
-# A single native SSH process must not be able to freeze the outer readiness
-# loop. Exercise the process boundary with a real child that never finishes on
-# its own, rather than another instant-returning ssh mock.
-$currentPowerShell = (Get-Process -Id $PID).Path
+# A single SSH job must not be able to freeze the outer readiness loop.
 $hungStopwatch = [Diagnostics.Stopwatch]::StartNew()
-$hungResult = Invoke-NativeProcessWithTimeout `
-    $currentPowerShell `
-    @('-NoProfile', '-Command', 'Start-Sleep -Seconds 30') `
+$hungResult = Invoke-BackgroundJobWithTimeout `
+    { Start-Sleep -Seconds 30 } `
+    @() `
     1
 $hungStopwatch.Stop()
 if (-not $hungResult.TimedOut) {

@@ -101,52 +101,36 @@ function Invoke-NativeQuiet([scriptblock]$Action) {
     }
 }
 
-function Format-NativeArgument([string]$Value) {
-    if ($Value.Contains('"')) {
-        Stop-Setup 'Native process arguments cannot contain a double quote.'
-    }
-    if ($Value.Length -eq 0) { return '""' }
-    if ($Value -notmatch '\s') { return $Value }
-    return '"{0}"' -f $Value
-}
-
-function Invoke-NativeProcessWithTimeout(
-    [string]$FilePath,
-    [string[]]$Arguments,
+function Invoke-BackgroundJobWithTimeout(
+    [scriptblock]$ScriptBlock,
+    [object[]]$ArgumentList,
     [int]$TimeoutSeconds
 ) {
-    $processInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $processInfo.FileName = $FilePath
-    $processInfo.Arguments = (($Arguments | ForEach-Object { Format-NativeArgument $_ }) -join ' ')
-    $processInfo.UseShellExecute = $false
-    $processInfo.CreateNoWindow = $true
-    $processInfo.RedirectStandardOutput = $true
-    $processInfo.RedirectStandardError = $true
-
-    $process = New-Object System.Diagnostics.Process
-    $process.StartInfo = $processInfo
+    $job = Start-Job -ScriptBlock $ScriptBlock -ArgumentList $ArgumentList
     try {
-        if (-not $process.Start()) {
-            Stop-Setup "Could not start native process: $FilePath"
-        }
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            try { $process.Kill() } catch { }
-            $process.WaitForExit()
+        $completedJob = Wait-Job -Job $job -Timeout $TimeoutSeconds
+        if ($null -eq $completedJob) {
+            Stop-Job -Job $job
             return [pscustomobject]@{
                 ExitCode = 124
                 TimedOut = $true
-                StandardError = "Process exceeded the $TimeoutSeconds-second timeout."
+                StandardError = "SSH probe exceeded the $TimeoutSeconds-second timeout."
             }
         }
 
-        return [pscustomobject]@{
-            ExitCode = $process.ExitCode
-            TimedOut = $false
-            StandardError = $process.StandardError.ReadToEnd().Trim()
+        $result = @(Receive-Job -Job $job)
+        if ($result.Count -eq 0) {
+            return [pscustomobject]@{
+                ExitCode = 1
+                TimedOut = $false
+                StandardError = 'SSH probe ended without returning a result.'
+            }
         }
+        return $result[-1]
     }
     finally {
-        $process.Dispose()
+        if ($job.State -eq 'Running') { Stop-Job -Job $job }
+        Remove-Job -Job $job -Force
     }
 }
 
@@ -351,7 +335,23 @@ function Get-SshOptions {
 
 function Invoke-SshProbe([string[]]$Options, [string]$Target) {
     $sshExecutable = (Get-Command ssh -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-    Invoke-NativeProcessWithTimeout $sshExecutable (@($Options) + @($Target, 'echo ok')) 10
+    $connection = [pscustomobject]@{
+        Executable = $sshExecutable
+        Options = @($Options)
+        Target = $Target
+    }
+    $probeScript = {
+        param($Connection)
+        $ErrorActionPreference = 'Continue'
+        $sshOptions = @($Connection.Options)
+        $nativeOutput = @(& $Connection.Executable @sshOptions $Connection.Target 'echo ok' 2>&1)
+        [pscustomobject]@{
+            ExitCode = $LASTEXITCODE
+            TimedOut = $false
+            StandardError = (($nativeOutput | ForEach-Object { $_.ToString() }) -join [Environment]::NewLine).Trim()
+        }
+    }
+    Invoke-BackgroundJobWithTimeout $probeScript @(,$connection) 10
 }
 
 function Wait-ForServer {
