@@ -2,8 +2,6 @@
 
 One command to launch a coding-agent-ready VPS.
 
-This script creates a hardened Hetzner server with Claude Code, Codex, Gemini CLI, and OpenCode pre-installed.
-
 ## Before You Start
 
 ### 1. Hetzner Cloud Account (required)
